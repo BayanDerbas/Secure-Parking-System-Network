@@ -1,5 +1,4 @@
 import org.mindrot.jbcrypt.BCrypt;
-
 import java.sql.*;
 import java.util.Scanner;
 
