@@ -153,7 +153,7 @@ public class ParkingClient {
 
     private static void showAvailableSpots() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
-            String query = "SELECT spot_number, is_reserved, reserved_at FROM parking_spots WHERE is_reserved = FALSE OR reserved_at IS NULL";
+            String query = "SELECT spot_number, is_reserved FROM parking_spots WHERE is_reserved = FALSE";
             try (Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(query)) {
                 System.out.println("Available parking spots: ");
                 while (rs.next()) {
@@ -165,7 +165,6 @@ public class ParkingClient {
             System.err.println("Error fetching available spots: " + e.getMessage());
         }
     }
-
     private static void reserveParkingSpot(Scanner scanner, String userName) {
         showAvailableSpots();  // Show available parking spots first
 
@@ -173,67 +172,66 @@ public class ParkingClient {
         int spotNumber = scanner.nextInt();
         scanner.nextLine();  // consume newline
 
-        System.out.print("Enter the reservation time (YYYY-MM-DD HH:MM): ");
-        String reservedAt = scanner.nextLine();
+        System.out.print("Enter the reservation start time (YYYY-MM-DD HH:MM): ");
+        String startTime = scanner.nextLine();
+
+        System.out.print("Enter the reservation end time (YYYY-MM-DD HH:MM): ");
+        String endTime = scanner.nextLine();
 
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
-            // تحقق من حالة الموقف قبل الحجز
-            String checkAvailability = "SELECT is_reserved, reserved_at FROM parking_spots WHERE spot_number = ?";
-            try (PreparedStatement pstmt = conn.prepareStatement(checkAvailability)) {
-                pstmt.setInt(1, spotNumber);
-                ResultSet rs = pstmt.executeQuery();
+            // الحصول على user_id بناءً على الاسم
+            String getUserId = "SELECT id FROM users WHERE full_name = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(getUserId)) {
+                pstmt.setString(1, userName);
+                ResultSet userRs = pstmt.executeQuery();
+                if (userRs.next()) {
+                    int userId = userRs.getInt("id");
 
-                if (rs.next()) {
-                    boolean isReserved = rs.getBoolean("is_reserved");
-                    String existingReservedAt = rs.getString("reserved_at");
+                    // التحقق من وجود حجز في نفس الموقف بنفس الفترة الزمنية
+                    String checkReservation = "SELECT * FROM reservations WHERE parking_spot_id = ? " +
+                            "AND ((reserved_at <= ? AND reserved_until >= ?) " +
+                            "OR (reserved_at >= ? AND reserved_until <= ?))";
+                    try (PreparedStatement checkStmt = conn.prepareStatement(checkReservation)) {
+                        checkStmt.setInt(1, spotNumber);
+                        checkStmt.setString(2, startTime);
+                        checkStmt.setString(3, startTime);
+                        checkStmt.setString(4, endTime);
+                        checkStmt.setString(5, endTime);
+                        ResultSet checkRs = checkStmt.executeQuery();
 
-                    if (isReserved && existingReservedAt.equals(reservedAt)) {
-                        System.out.println("This spot is already reserved at the specified time.");
-                    } else if (isReserved) {
-                        System.out.println("This spot is already reserved, but you can select a different time.");
-                    } else {
-                        reserveSpot(spotNumber, userName, reservedAt, conn);
+                        if (checkRs.next()) {
+                            // هناك حجز بالفعل في نفس الموقف وفي نفس الفترة
+                            System.out.println("The parking spot is already reserved for the selected time range. Please choose a different time.");
+                        } else {
+                            // إضافة الحجز إلى جدول reservations
+                            String reserveSpot = "INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until) " +
+                                    "VALUES (?, ?, ?, ?)";
+                            try (PreparedStatement reserveStmt = conn.prepareStatement(reserveSpot)) {
+                                reserveStmt.setInt(1, spotNumber);
+                                reserveStmt.setInt(2, userId);
+                                reserveStmt.setString(3, startTime);
+                                reserveStmt.setString(4, endTime);
+                                int rowsAffected = reserveStmt.executeUpdate();
+                                if (rowsAffected > 0) {
+                                    System.out.println("Spot " + spotNumber + " has been reserved successfully from " +
+                                            startTime + " to " + endTime + ".");
+                                } else {
+                                    System.out.println("Failed to reserve spot. Please try again.");
+                                }
+                            }
+                        }
                     }
                 } else {
-                    System.out.println("Invalid parking spot number.");
+                    System.out.println("User not found.");
                 }
             }
         } catch (SQLException e) {
             System.err.println("Error reserving parking spot: " + e.getMessage());
         }
     }
-
-    private static void reserveSpot(int spotNumber, String userName, String reservedAt, Connection conn) throws SQLException {
-        // الحصول على user_id بناءً على الاسم
-        String getUserId = "SELECT id FROM users WHERE full_name = ?";
-        try (PreparedStatement pstmt = conn.prepareStatement(getUserId)) {
-            pstmt.setString(1, userName);
-            ResultSet userRs = pstmt.executeQuery();
-            if (userRs.next()) {
-                int userId = userRs.getInt("id");
-
-                // حجز المكان وتحديث التفاصيل
-                String reserveSpot = "UPDATE parking_spots SET is_reserved = TRUE, reserved_by = ?, reserved_at = ? WHERE spot_number = ?";
-                try (PreparedStatement reserveStmt = conn.prepareStatement(reserveSpot)) {
-                    reserveStmt.setInt(1, userId);
-                    reserveStmt.setString(2, reservedAt);
-                    reserveStmt.setInt(3, spotNumber);
-                    int rowsAffected = reserveStmt.executeUpdate();
-                    if (rowsAffected > 0) {
-                        System.out.println("Spot " + spotNumber + " has been reserved successfully for " + reservedAt + ".");
-                    } else {
-                        System.out.println("Failed to reserve spot. Please try again.");
-                    }
-                }
-            } else {
-                System.out.println("User not found.");
-            }
-        }
-    }
-
     private static void cancelReservation(Scanner scanner, String userName) {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
-            String query = "SELECT spot_number, reserved_at FROM parking_spots WHERE reserved_by = (SELECT id FROM users WHERE full_name = ?)";
+            String query = "SELECT ps.spot_number, r.reserved_at FROM reservations r JOIN parking_spots ps ON r.parking_spot_id = ps.id WHERE r.user_id = (SELECT id FROM users WHERE full_name = ?)";
             try (PreparedStatement pstmt = conn.prepareStatement(query)) {
                 pstmt.setString(1, userName);
                 ResultSet rs = pstmt.executeQuery();
@@ -256,7 +254,7 @@ public class ParkingClient {
                 int spotNumberToCancel = scanner.nextInt();
                 scanner.nextLine();  // consume newline
 
-                String cancelSQL = "UPDATE parking_spots SET is_reserved = FALSE, reserved_by = NULL, reserved_at = NULL WHERE reserved_by = (SELECT id FROM users WHERE full_name = ?) AND spot_number = ?";
+                String cancelSQL = "DELETE FROM reservations WHERE user_id = (SELECT id FROM users WHERE full_name = ?) AND parking_spot_id = ?";
                 try (PreparedStatement cancelStmt = conn.prepareStatement(cancelSQL)) {
                     cancelStmt.setString(1, userName);
                     cancelStmt.setInt(2, spotNumberToCancel);

@@ -13,9 +13,8 @@ public class InsertInitialData {
         // Display the menu options to the user
         System.out.println("Select an operation:");
         System.out.println("1. Add Parking Spots");
-        System.out.println("2. Delete a Specific Parking Spot");
-        System.out.println("3. Delete All Parking Spots and Recreate Table");
-        System.out.print("Enter your choice (1, 2 or 3): ");
+        System.out.println("2. Delete All Parking Spots and Recreate Table");
+        System.out.print("Enter your choice (1, 2): ");
         int choice = scanner.nextInt();
 
         switch (choice) {
@@ -23,9 +22,6 @@ public class InsertInitialData {
                 addParkingSpots();
                 break;
             case 2:
-                deleteParkingSpot();
-                break;
-            case 3:
                 deleteAllParkingSpotsAndRecreateTable();
                 break;
             default:
@@ -55,31 +51,6 @@ public class InsertInitialData {
             System.err.println("Error adding parking spots: " + e.getMessage());
         }
     }
-
-    // Method to delete a specific parking spot
-    private static void deleteParkingSpot() {
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("Enter the spot number you want to delete: ");
-        int spotNumber = scanner.nextInt();
-
-        try (Connection conn = DriverManager.getConnection(DB_URL);
-             Statement stmt = conn.createStatement()) {
-
-            // Delete the specific parking spot
-            String deleteSpot = "DELETE FROM parking_spots WHERE spot_number = " + spotNumber;
-            int rowsAffected = stmt.executeUpdate(deleteSpot);
-
-            if (rowsAffected > 0) {
-                System.out.println("Parking spot number " + spotNumber + " deleted successfully!");
-            } else {
-                System.out.println("Parking spot number " + spotNumber + " not found.");
-            }
-
-        } catch (SQLException e) {
-            System.err.println("Error deleting parking spot: " + e.getMessage());
-        }
-    }
-
     // Method to delete all parking spots and recreate the table
     private static void deleteAllParkingSpotsAndRecreateTable() {
         try (Connection conn = DriverManager.getConnection(DB_URL);
