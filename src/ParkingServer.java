@@ -2,16 +2,10 @@ import java.io.*;
 import java.net.*;
 import java.security.PublicKey;
 import java.sql.*;
-
 public class ParkingServer {
     private static final int PORT = 3000;
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
-    private static String receiveDecryptedMessage(String encryptedMessage) throws Exception {
-        return RSAUtils.decrypt(encryptedMessage);
-    }
-    private static String sendEncryptedMessage(String message, PublicKey clientPublicKey) throws Exception {
-        return RSAUtils.encrypt(message, clientPublicKey);
-    }
+
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is listening on port " + PORT);
@@ -56,13 +50,21 @@ public class ParkingServer {
                         case "reserve_spot":
                             handleReserveSpot();
                             break;
+                        case "view_reservations":
+                            handleViewReservations();
+                            break;
+                        case "cancel_reservation": // الحالة الجديدة
+                            handleCancelReservation();
+                            break;
                         default:
-                            out.println("Invalid operation.");
+                            out.println(AESUtils.encrypt("Invalid operation."));
                             break;
                     }
                 }
             } catch (IOException e) {
                 System.err.println("Error in client handler: " + e.getMessage());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             } finally {
                 closeResources();
             }
@@ -84,17 +86,28 @@ public class ParkingServer {
             String userType = in.readLine();
             String phoneNumber = in.readLine();
             String carPlate = in.readLine();
-            String password = in.readLine();
+            String encryptedPassword = in.readLine(); // Already encrypted by the client
 
-            boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, password);
+            boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, encryptedPassword);
             out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
         }
         private void handleLogin() throws IOException {
             String fullName = in.readLine();
             String encryptedPassword = in.readLine();
+
             System.out.println("Received encrypted password: " + encryptedPassword); // Debugging
 
-            boolean isLoggedIn = loginUser(fullName, encryptedPassword);
+            // فك تشفير كلمة المرور قبل إرسالها للمقارنة
+            String rawPassword;
+            try {
+                rawPassword = AESUtils.decrypt(encryptedPassword);
+            } catch (Exception e) {
+                System.err.println("Error decrypting password: " + e.getMessage());
+                out.println("Login failed!"); // إرسال خطأ للعميل
+                return;
+            }
+
+            boolean isLoggedIn = loginUser(fullName, rawPassword); // استخدم الكلمة الأصلية
             out.println(isLoggedIn ? "Login successful!" : "Login failed!");
 
             if (isLoggedIn) {
@@ -102,32 +115,37 @@ public class ParkingServer {
                 System.out.println("Current user: " + this.currentUser); // Debugging
             }
         }
-        private boolean loginUser(String fullName, String encryptedPassword) {
+        private boolean loginUser(String fullName, String rawPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
                 pstmt.setString(1, fullName);
                 ResultSet rs = pstmt.executeQuery();
+
                 if (rs.next()) {
                     String storedEncryptedPassword = rs.getString("password");
-                    System.out.println("Stored encrypted password: " + storedEncryptedPassword);
-                    System.out.println("Received encrypted password: " + encryptedPassword);
+
+                    // Encrypt the raw password for comparison
+                    String encryptedPassword = AESUtils.encrypt(rawPassword);
+                    System.out.println("Stored Encrypted Password: " + storedEncryptedPassword);
+                    System.out.println("Re-encrypted Password: " + encryptedPassword);
 
                     return storedEncryptedPassword.equals(encryptedPassword);
                 }
             } catch (SQLException e) {
                 System.err.println("Error during login: " + e.getMessage());
+            } catch (Exception e) {
+                System.err.println("Error encrypting password for comparison: " + e.getMessage());
             }
             return false;
         }
-        private boolean registerUser(String fullName, String userType, String phone, String carPlate, String password) {
-            String encryptedPassword;
+        private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword) {
             String encryptedCarPlate;
             String encryptedPhone;
             String encryptedUserType;
 
             try {
-                encryptedPassword = AESUtils.encrypt(password);
                 encryptedCarPlate = AESUtils.encrypt(carPlate);
                 encryptedPhone = AESUtils.encrypt(phone);
                 encryptedUserType = AESUtils.encrypt(userType);
@@ -197,7 +215,6 @@ public class ParkingServer {
                 out.println("An error occurred during reservation. Please try again.");
             }
         }
-        // إزالة طباعة المواقف في السيرفر
         private String getAvailableParkingSpots() {
             StringBuilder spots = new StringBuilder();
             String sql = """
@@ -286,6 +303,77 @@ public class ParkingServer {
                 System.err.println("Error fetching user ID: " + e.getMessage());
             }
             return -1;
+        }
+        private void handleViewReservations() throws Exception {
+            StringBuilder reservations = new StringBuilder();
+            String sql = """
+        SELECT ps.spot_number, r.reserved_at, r.reserved_until
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
+    """;
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                stmt.setInt(1, getCurrentUserId());
+                ResultSet rs = stmt.executeQuery();
+
+                while (rs.next()) {
+                    int spotNumber = rs.getInt("spot_number");
+                    String reservedAt = rs.getString("reserved_at");
+                    String reservedUntil = rs.getString("reserved_until");
+
+                    String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil;
+                    String encryptedData = AESUtils.encrypt(data); // تشفير البيانات
+
+                    reservations.append(encryptedData).append("\n");
+                }
+            } catch (Exception e) {
+                System.err.println("Error fetching or encrypting reservations: " + e.getMessage());
+            }
+
+            if (reservations.length() > 0) {
+                out.println(reservations.toString().trim());
+            } else {
+                out.println(AESUtils.encrypt("No reservations found.")); // تشفير الرسالة
+            }
+            out.println(AESUtils.encrypt("END_OF_RESERVATIONS")); // تشفير الإشارة النهائية
+        }
+        private void handleCancelReservation() throws Exception {
+            String encryptedSpotNumber = in.readLine(); // استقبال الرقم المشفر
+            int spotNumber;
+
+            try {
+                String decryptedSpotNumber = AESUtils.decrypt(encryptedSpotNumber); // فك التشفير
+                spotNumber = Integer.parseInt(decryptedSpotNumber);
+            } catch (Exception e) {
+                out.println(AESUtils.encrypt("Error: Invalid spot number.")); // استجابة مشفرة
+                return;
+            }
+
+            String sql = """
+        DELETE FROM reservations
+        WHERE parking_spot_id = (SELECT id FROM parking_spots WHERE spot_number = ?)
+        AND user_id = ?
+    """;
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                stmt.setInt(1, spotNumber);
+                stmt.setInt(2, getCurrentUserId());
+                int rowsAffected = stmt.executeUpdate();
+
+                if (rowsAffected > 0) {
+                    out.println(AESUtils.encrypt("Reservation canceled successfully.")); // استجابة مشفرة
+                } else {
+                    out.println(AESUtils.encrypt("Error: Reservation not found or already canceled.")); // استجابة مشفرة
+                }
+            } catch (SQLException e) {
+                System.err.println("Error canceling reservation: " + e.getMessage());
+                out.println(AESUtils.encrypt("Error: Could not cancel reservation.")); // استجابة مشفرة
+            }
         }
     }
 }

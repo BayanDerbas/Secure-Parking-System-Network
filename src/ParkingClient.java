@@ -1,32 +1,10 @@
 import java.io.*;
 import java.net.Socket;
-import java.security.KeyFactory;
-import java.security.PublicKey;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
 import java.util.Scanner;
 
 public class ParkingClient {
     private static final String SERVER_HOST = "localhost"; // عنوان الخادم
     private static final int SERVER_PORT = 3000; // منفذ الخادم
-    private static PublicKey serverPublicKey;
-
-    private static void fetchServerPublicKey(PrintWriter out, BufferedReader in) throws Exception {
-        out.println("get_public_key");
-        String base64PublicKey = in.readLine(); // قراءة المفتاح العام من الخادم
-        byte[] keyBytes = Base64.getDecoder().decode(base64PublicKey);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
-        serverPublicKey = keyFactory.generatePublic(spec);
-    }
-    private static void sendEncryptedMessage(String message, PrintWriter out) throws Exception {
-        String encryptedMessage = RSAUtils.encrypt(message, serverPublicKey);
-        out.println(encryptedMessage);
-    }
-    private static String receiveDecryptedMessage(BufferedReader in) throws Exception {
-        String encryptedMessage = in.readLine();
-        return RSAUtils.decrypt(encryptedMessage);
-    }
 
     public static void main(String[] args) {
         try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
@@ -107,20 +85,62 @@ public class ParkingClient {
     private static void userMenu(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
         while (true) {
             System.out.println("1. Reserve a parking spot");
-            System.out.println("2. Logout");
+            System.out.println("2. View your reservations");
+            System.out.println("3. Cancel a reservation"); // خيار جديد
+            System.out.println("4. Logout");
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
 
             switch (choice) {
-                case 1 -> handleReserveSpot(out, in, scanner);  // استدعاء دالة الحجز
-                case 2 -> {
+                case 1 -> handleReserveSpot(out, in, scanner);
+                case 2 -> handleViewReservations(out, in);
+                case 3 -> handleCancelReservation(out, in, scanner); // استدعاء دالة الإلغاء
+                case 4 -> {
                     System.out.println("Logging out...");
-                    return;  // العودة إلى القائمة الرئيسية
+                    return;
                 }
                 default -> System.out.println("Invalid option. Try again.");
             }
         }
+    }
+    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
+        handleViewReservations(out, in); // عرض الحجوزات الحالية
+        System.out.print("Enter the spot number to cancel: ");
+        int spotNumber = scanner.nextInt();
+        scanner.nextLine(); // استهلاك السطر المتبقي
+
+        try {
+            String encryptedSpotNumber = AESUtils.encrypt(String.valueOf(spotNumber)); // تشفير البيانات
+            out.println("cancel_reservation"); // إرسال الطلب
+            out.println(encryptedSpotNumber); // إرسال الرقم المشفر
+
+            String response = AESUtils.decrypt(in.readLine()); // فك التشفير للاستجابة
+            System.out.println(response);
+        } catch (Exception e) {
+            System.err.println("Error in cancellation process: " + e.getMessage());
+        }
+    }
+    private static void handleViewReservations(PrintWriter out, BufferedReader in) throws IOException {
+        out.println("view_reservations"); // إرسال الطلب إلى الخادم
+
+        System.out.println("Your reservations:");
+        StringBuilder reservations = new StringBuilder();
+        String line;
+        while (true) {
+            line = in.readLine();
+            try {
+                line = AESUtils.decrypt(line); // فك التشفير
+            } catch (Exception e) {
+                System.err.println("Error decrypting data: " + e.getMessage());
+                break;
+            }
+            if (line.equals("END_OF_RESERVATIONS")) { // التحقق من الإشارة النهائية
+                break;
+            }
+            reservations.append(line).append("\n");
+        }
+        System.out.println(reservations.toString().trim());
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
         out.println("reserve_spot");

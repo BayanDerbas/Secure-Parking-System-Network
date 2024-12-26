@@ -31,7 +31,6 @@ public class InsertInitialData {
 
         scanner.close();
     }
-
     // Method to add new parking spots
     private static void addParkingSpots() {
         try (Connection conn = DriverManager.getConnection(DB_URL);
