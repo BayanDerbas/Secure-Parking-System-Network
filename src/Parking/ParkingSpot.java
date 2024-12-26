@@ -1,5 +1,6 @@
-public class ParkingSpot {
-    private int id;
+package Parking;
+
+public class ParkingSpot {    private int id;
     private int spotNumber;
     private boolean isReserved;
     private Integer reservedBy;

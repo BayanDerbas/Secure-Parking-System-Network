@@ -1,6 +1,8 @@
+package Parking;
+import Utils.AESUtils;
+
 import java.io.*;
 import java.net.*;
-import java.security.PublicKey;
 import java.sql.*;
 public class ParkingServer {
     private static final int PORT = 3000;
@@ -89,7 +91,7 @@ public class ParkingServer {
             String encryptedPassword = in.readLine(); // Already encrypted by the client
 
             boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, encryptedPassword);
-            out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
+            out.println(isRegistered ? "Parking.User registered successfully!" : "Registration failed!");
         }
         private void handleLogin() throws IOException {
             String fullName = in.readLine();
@@ -154,7 +156,7 @@ public class ParkingServer {
                 System.out.println("Password: " + encryptedPassword);
                 System.out.println("Car Plate: " + encryptedCarPlate);
                 System.out.println("Phone: " + encryptedPhone);
-                System.out.println("User Type: " + encryptedUserType);
+                System.out.println("Parking.User Type: " + encryptedUserType);
             } catch (Exception e) {
                 System.err.println("Error during encryption: " + e.getMessage());
                 return false;
@@ -169,7 +171,7 @@ public class ParkingServer {
                 pstmt.setString(4, encryptedCarPlate);
                 pstmt.setString(5, encryptedPassword);
                 pstmt.executeUpdate();
-                System.out.println("User registered successfully!");
+                System.out.println("Parking.User registered successfully!");
                 return true;
             } catch (SQLException e) {
                 System.err.println("Error during user registration: " + e.getMessage());
