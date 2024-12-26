@@ -11,7 +11,10 @@ public class AESUtils {
         Cipher cipher = Cipher.getInstance(AES);
         cipher.init(Cipher.ENCRYPT_MODE, key);
         byte[] encryptedData = cipher.doFinal(data.getBytes());
-        return Base64.getEncoder().encodeToString(encryptedData);
+        String encryptedString = Base64.getEncoder().encodeToString(encryptedData);
+        // طباعة العملية
+        System.out.println("Encrypting Data: " + data + " -> " + encryptedString);
+        return encryptedString;
     }
 
     public static String decrypt(String encryptedData) throws Exception {
@@ -19,6 +22,9 @@ public class AESUtils {
         Cipher cipher = Cipher.getInstance(AES);
         cipher.init(Cipher.DECRYPT_MODE, key);
         byte[] decodedData = Base64.getDecoder().decode(encryptedData);
-        return new String(cipher.doFinal(decodedData));
+        String decryptedString = new String(cipher.doFinal(decodedData));
+        // طباعة العملية
+        System.out.println("Decrypting Data: " + encryptedData + " -> " + decryptedString);
+        return decryptedString;
     }
 }

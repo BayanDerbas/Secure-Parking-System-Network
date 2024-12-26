@@ -1,11 +1,17 @@
 import java.io.*;
 import java.net.*;
+import java.security.PublicKey;
 import java.sql.*;
 
 public class ParkingServer {
     private static final int PORT = 3000;
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
-
+    private static String receiveDecryptedMessage(String encryptedMessage) throws Exception {
+        return RSAUtils.decrypt(encryptedMessage);
+    }
+    private static String sendEncryptedMessage(String message, PublicKey clientPublicKey) throws Exception {
+        return RSAUtils.encrypt(message, clientPublicKey);
+    }
     public static void main(String[] args) {
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is listening on port " + PORT);
@@ -19,17 +25,14 @@ public class ParkingServer {
             System.err.println("Server exception: " + e.getMessage());
         }
     }
-
     private static class ClientHandler implements Runnable {
         private Socket clientSocket;
         private PrintWriter out;
         private BufferedReader in;
         private String currentUser; // المستخدم الحالي للجلسة
-
         public ClientHandler(Socket socket) {
             this.clientSocket = socket;
         }
-
         @Override
         public void run() {
             try {
@@ -64,7 +67,6 @@ public class ParkingServer {
                 closeResources();
             }
         }
-
         private void closeResources() {
             try {
                 if (clientSocket != null && !clientSocket.isClosed()) {
@@ -77,7 +79,6 @@ public class ParkingServer {
                 System.err.println("Error closing resources: " + e.getMessage());
             }
         }
-
         private void handleRegister() throws IOException {
             String fullName = in.readLine();
             String userType = in.readLine();
@@ -88,71 +89,102 @@ public class ParkingServer {
             boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, password);
             out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
         }
-
         private void handleLogin() throws IOException {
             String fullName = in.readLine();
-            String password = in.readLine();
-            boolean isLoggedIn = loginUser(fullName, password);
+            String encryptedPassword = in.readLine();
+            System.out.println("Received encrypted password: " + encryptedPassword); // Debugging
+
+            boolean isLoggedIn = loginUser(fullName, encryptedPassword);
             out.println(isLoggedIn ? "Login successful!" : "Login failed!");
 
             if (isLoggedIn) {
-                this.currentUser = fullName; // حفظ اسم المستخدم الحالي
+                this.currentUser = fullName;
+                System.out.println("Current user: " + this.currentUser); // Debugging
             }
         }
-
-        private boolean registerUser(String fullName, String userType, String phoneNumber, String carPlate, String password) {
-            String sql = "INSERT INTO users (full_name, user_type, phone_number, car_plate, password) VALUES (?, ?, ?, ?, ?)";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, fullName);
-                pstmt.setString(2, userType);
-                pstmt.setString(3, phoneNumber);
-                pstmt.setString(4, carPlate);
-                pstmt.setString(5, password);
-                pstmt.executeUpdate();
-                return true;
-            } catch (SQLException e) {
-                System.err.println("Error registering user: " + e.getMessage());
-                return false;
-            }
-        }
-
-        private boolean loginUser(String fullName, String password) {
+        private boolean loginUser(String fullName, String encryptedPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, fullName);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
-                    return rs.getString("password").equals(password);
+                    String storedEncryptedPassword = rs.getString("password");
+                    System.out.println("Stored encrypted password: " + storedEncryptedPassword);
+                    System.out.println("Received encrypted password: " + encryptedPassword);
+
+                    return storedEncryptedPassword.equals(encryptedPassword);
                 }
             } catch (SQLException e) {
                 System.err.println("Error during login: " + e.getMessage());
             }
             return false;
         }
+        private boolean registerUser(String fullName, String userType, String phone, String carPlate, String password) {
+            String encryptedPassword;
+            String encryptedCarPlate;
+            String encryptedPhone;
+            String encryptedUserType;
 
+            try {
+                encryptedPassword = AESUtils.encrypt(password);
+                encryptedCarPlate = AESUtils.encrypt(carPlate);
+                encryptedPhone = AESUtils.encrypt(phone);
+                encryptedUserType = AESUtils.encrypt(userType);
+
+                System.out.println("Encrypted data to be stored:");
+                System.out.println("Password: " + encryptedPassword);
+                System.out.println("Car Plate: " + encryptedCarPlate);
+                System.out.println("Phone: " + encryptedPhone);
+                System.out.println("User Type: " + encryptedUserType);
+            } catch (Exception e) {
+                System.err.println("Error during encryption: " + e.getMessage());
+                return false;
+            }
+
+            String sql = "INSERT INTO users (full_name, user_type, phone_number, car_plate, password) VALUES (?, ?, ?, ?, ?)";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, fullName);
+                pstmt.setString(2, encryptedUserType);
+                pstmt.setString(3, encryptedPhone);
+                pstmt.setString(4, encryptedCarPlate);
+                pstmt.setString(5, encryptedPassword);
+                pstmt.executeUpdate();
+                System.out.println("User registered successfully!");
+                return true;
+            } catch (SQLException e) {
+                System.err.println("Error during user registration: " + e.getMessage());
+                return false;
+            }
+        }
         private void viewAvailableParkingSpots() throws IOException {
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots); // إرسال جميع المواقف
             out.println("END_OF_SPOTS"); // إشارة نهاية
         }
-
         private void handleReserveSpot() throws IOException {
+            // إرسال المواقف المتاحة للعميل
             String availableSpots = getAvailableParkingSpots();
-
             out.println(availableSpots);
-            out.println("END_OF_SPOTS"); // إشارة نهاية
+            out.println("END_OF_SPOTS");
 
             if (availableSpots.equals("No parking spots available.")) {
-                return; // خروج مبكر إذا لم تكن هناك مواقف
+                return;
             }
 
             try {
-                int spotNumber = Integer.parseInt(in.readLine());
-                String startTime = in.readLine();
-                String endTime = in.readLine();
+                // استلام البيانات من العميل (مشفرة)
+                String encryptedSpotNumber = in.readLine();
+                String encryptedStartTime = in.readLine();
+                String encryptedEndTime = in.readLine();
 
+                // فك التشفير
+                int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
+                String startTime = AESUtils.decrypt(encryptedStartTime);
+                String endTime = AESUtils.decrypt(encryptedEndTime);
+
+                // معالجة الحجز
                 if (reserveParkingSpot(spotNumber, startTime, endTime)) {
                     out.println("Reservation successful!");
                 } else {
@@ -160,33 +192,28 @@ public class ParkingServer {
                 }
             } catch (NumberFormatException e) {
                 out.println("Invalid spot number. Please try again.");
+            } catch (Exception e) {
+                System.err.println("Error during reservation: " + e.getMessage());
+                out.println("An error occurred during reservation. Please try again.");
             }
         }
-
+        // إزالة طباعة المواقف في السيرفر
         private String getAvailableParkingSpots() {
             StringBuilder spots = new StringBuilder();
             String sql = """
         SELECT spot_number FROM parking_spots 
         WHERE spot_number NOT IN (
             SELECT parking_spot_id FROM reservations
-            WHERE (reserved_at BETWEEN ? AND ?)
-            OR (reserved_until BETWEEN ? AND ?)
-            OR (? BETWEEN reserved_at AND reserved_until)
-            OR (? BETWEEN reserved_at AND reserved_until)
+            WHERE (reserved_at <= ? AND reserved_until >= ?)
         )
     """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-                // تمرير التاريخ الحالي لجلب المواقف المتاحة
-                String currentTime = getCurrentTime(); // حدد الوقت الحالي
-                stmt.setString(1, currentTime); // بداية الوقت
-                stmt.setString(2, currentTime); // نهاية الوقت
-                stmt.setString(3, currentTime); // بداية الوقت
-                stmt.setString(4, currentTime); // نهاية الوقت
-                stmt.setString(5, currentTime); // بداية الوقت
-                stmt.setString(6, currentTime); // نهاية الوقت
+                String currentTime = getCurrentTime();
+                stmt.setString(1, currentTime);
+                stmt.setString(2, currentTime);
 
                 ResultSet rs = stmt.executeQuery();
                 while (rs.next()) {
@@ -197,15 +224,12 @@ public class ParkingServer {
                 System.err.println("Error fetching parking spots: " + e.getMessage());
             }
 
-            System.out.println("Available spots to send: " + spots.toString()); // طباعة البيانات قبل الإرسال
             return spots.length() > 0 ? spots.toString().trim() : "No parking spots available.";
         }
-
         private String getCurrentTime() {
             // هنا يمكنك استخدام تاريخ الوقت الحالي بالصيغ المناسبة حسب قاعدة البيانات أو كما ترغب
             return java.time.LocalDateTime.now().toString(); // تعديل على الصيغة إذا لزم الأمر
         }
-
         private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
             String checkOverlap = """
         SELECT 1 
@@ -219,6 +243,7 @@ public class ParkingServer {
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement checkStmt = conn.prepareStatement(checkOverlap)) {
+
                 checkStmt.setInt(1, spotNumber);
                 checkStmt.setString(2, startTime);
                 checkStmt.setString(3, endTime);
@@ -229,17 +254,16 @@ public class ParkingServer {
 
                 ResultSet rs = checkStmt.executeQuery();
                 if (rs.next()) {
-                    return false; // الحجز يتداخل مع حجز موجود
+                    return false;
                 }
 
-                // إدخال الحجز الجديد
                 String insertReservation = """
             INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until) 
             VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?);
         """;
                 try (PreparedStatement insertStmt = conn.prepareStatement(insertReservation)) {
                     insertStmt.setInt(1, spotNumber);
-                    insertStmt.setInt(2, getCurrentUserId()); // استخدم معرف المستخدم الحالي
+                    insertStmt.setInt(2, getCurrentUserId());
                     insertStmt.setString(3, startTime);
                     insertStmt.setString(4, endTime);
                     return insertStmt.executeUpdate() > 0;
@@ -249,7 +273,6 @@ public class ParkingServer {
             }
             return false;
         }
-
         private int getCurrentUserId() {
             String sql = "SELECT id FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -264,6 +287,5 @@ public class ParkingServer {
             }
             return -1;
         }
-
     }
 }
