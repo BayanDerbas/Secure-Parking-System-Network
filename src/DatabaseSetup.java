@@ -50,19 +50,18 @@ public class DatabaseSetup {
             if (conn != null) {
                 System.out.println("Connected to the database!");
 
-                // إنشاء جدول المستخدمين إذا لم يكن موجودًا
                 String createUsersTable = """
-                        CREATE TABLE IF NOT EXISTS users (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            full_name TEXT NOT NULL,
-                            user_type TEXT NOT NULL,
-                            phone_number TEXT NOT NULL,
-                            car_plate TEXT NOT NULL,
-                            password_hash TEXT NOT NULL
-                        );
+                            CREATE TABLE IF NOT EXISTS users (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                full_name TEXT NOT NULL,
+                                user_type TEXT NOT NULL,
+                                phone_number TEXT NOT NULL,
+                                car_plate TEXT NOT NULL,
+                                password TEXT NOT NULL
+                            );
                         """;
 
-                // إنشاء جدول المواقف
+
                 String createParkingSpotsTable = """
                         CREATE TABLE IF NOT EXISTS parking_spots (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +70,6 @@ public class DatabaseSetup {
                         );
                         """;
 
-                // إنشاء جدول الحجوزات
                 String createReservationsTable = """
                         CREATE TABLE IF NOT EXISTS reservations (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +82,6 @@ public class DatabaseSetup {
                         );
                         """;
 
-
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createUsersTable);
                     stmt.execute(createParkingSpotsTable);
@@ -93,11 +90,10 @@ public class DatabaseSetup {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error creating tables: " + e.getMessage());
         }
-    }
+    }    // عرض البيانات من الجداول
 
-    // عرض البيانات من الجداول
     private static void viewData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {
@@ -114,9 +110,9 @@ public class DatabaseSetup {
                         String userType = rs.getString("user_type");
                         String phoneNumber = rs.getString("phone_number");
                         String carPlate = rs.getString("car_plate");
-                        String passwordHash = rs.getString("password_hash");
+                        String password = rs.getString("password");
                         System.out.println("ID: " + id + ", Name: " + fullName + ", Type: " + userType +
-                                ", Phone: " + phoneNumber + ", Car Plate: " + carPlate + ", Password Hash: " + passwordHash);
+                                ", Phone: " + phoneNumber + ", Car Plate: " + carPlate + ", Password: " + password);
                     }
                 }
 
@@ -129,18 +125,18 @@ public class DatabaseSetup {
                         int id = rs.getInt("id");
                         int spotNumber = rs.getInt("spot_number");
                         boolean isReserved = rs.getBoolean("is_reserved");
-                        System.out.println("ID: " + id + ", Spot Number: " + spotNumber);
+                        System.out.println("ID: " + id + ", Spot Number: " + spotNumber + ", Reserved: " + isReserved);
                     }
                 }
 
                 // استعلام لعرض الحجوزات
                 String viewReservations = """
-                        SELECT ps.spot_number, u.full_name, r.reserved_at
-                        FROM reservations r
-                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                        JOIN users u ON r.user_id = u.id
-                        ORDER BY r.reserved_at;
-                        """;
+                    SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until
+                    FROM reservations r
+                    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                    JOIN users u ON r.user_id = u.id
+                    ORDER BY r.reserved_at;
+                    """;
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(viewReservations)) {
                     System.out.println("Reservations:");
@@ -148,7 +144,9 @@ public class DatabaseSetup {
                         int spotNumber = rs.getInt("spot_number");
                         String fullName = rs.getString("full_name");
                         String reservedAt = rs.getString("reserved_at");
-                        System.out.println("Spot Number: " + spotNumber + ", Reserved By: " + fullName + ", Reserved At: " + reservedAt);
+                        String reservedUntil = rs.getString("reserved_until");
+                        System.out.println("Spot Number: " + spotNumber + ", Reserved By: " + fullName +
+                                ", Reserved At: " + reservedAt + ", Until: " + reservedUntil);
                     }
                 }
             }
@@ -156,7 +154,6 @@ public class DatabaseSetup {
             System.err.println("Error retrieving data: " + e.getMessage());
         }
     }
-
     // حذف البيانات
     private static void deleteData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
@@ -178,22 +175,19 @@ public class DatabaseSetup {
             System.err.println("Error deleting data: " + e.getMessage());
         }
     }
-
     // حذف الجداول
     private static void dropTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {
-                System.out.println("Connected to the database!");
-
                 String dropUsersTable = "DROP TABLE IF EXISTS users;";
                 String dropParkingSpotsTable = "DROP TABLE IF EXISTS parking_spots;";
                 String dropReservationsTable = "DROP TABLE IF EXISTS reservations;";
 
                 try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate(dropUsersTable);
-                    stmt.executeUpdate(dropParkingSpotsTable);
-                    stmt.executeUpdate(dropReservationsTable);
-                    System.out.println("Tables have been dropped.");
+                    stmt.execute(dropReservationsTable);
+                    stmt.execute(dropParkingSpotsTable);
+                    stmt.execute(dropUsersTable);
+                    System.out.println("Tables dropped successfully!");
                 }
             }
         } catch (SQLException e) {

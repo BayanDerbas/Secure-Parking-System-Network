@@ -1,31 +1,22 @@
 import java.io.*;
 import java.net.*;
 import java.sql.*;
-import java.util.concurrent.*;
-import org.mindrot.jbcrypt.BCrypt;
 
 public class ParkingServer {
     private static final int PORT = 3000;
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
-    private static final int MAX_THREADS = 100; // تحديد الحد الأقصى للخيوط
 
     public static void main(String[] args) {
-        ExecutorService threadPool = Executors.newFixedThreadPool(MAX_THREADS); // ThreadPool ثابت
-
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is listening on port " + PORT);
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("A client has connected from " + clientSocket.getInetAddress());
-
-                // تشغيل معالج العميل في خيط ضمن الـ ThreadPool
-                threadPool.execute(new ClientHandler(clientSocket));
+                new Thread(new ClientHandler(clientSocket)).start();
             }
         } catch (IOException e) {
             System.err.println("Server exception: " + e.getMessage());
-        } finally {
-            threadPool.shutdown();
         }
     }
 
@@ -33,6 +24,7 @@ public class ParkingServer {
         private Socket clientSocket;
         private PrintWriter out;
         private BufferedReader in;
+        private String currentUser; // المستخدم الحالي للجلسة
 
         public ClientHandler(Socket socket) {
             this.clientSocket = socket;
@@ -93,8 +85,7 @@ public class ParkingServer {
             String carPlate = in.readLine();
             String password = in.readLine();
 
-            String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-            boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, passwordHash);
+            boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, password);
             out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
         }
 
@@ -103,33 +94,21 @@ public class ParkingServer {
             String password = in.readLine();
             boolean isLoggedIn = loginUser(fullName, password);
             out.println(isLoggedIn ? "Login successful!" : "Login failed!");
-        }
 
-        private void viewAvailableParkingSpots() throws IOException {
-            String availableSpots = getAvailableParkingSpots();
-            out.println(availableSpots);
-        }
-
-        private void handleReserveSpot() throws IOException {
-            int spotNumber = Integer.parseInt(in.readLine());
-            String reservedAt = in.readLine();
-
-            if (reserveParkingSpot(spotNumber, reservedAt)) {
-                out.println("Reservation successful!");
-            } else {
-                out.println("Parking spot is already reserved.");
+            if (isLoggedIn) {
+                this.currentUser = fullName; // حفظ اسم المستخدم الحالي
             }
         }
 
-        private boolean registerUser(String fullName, String userType, String phoneNumber, String carPlate, String passwordHash) {
-            String sql = "INSERT INTO users (full_name, user_type, phone_number, car_plate, password_hash) VALUES (?, ?, ?, ?, ?)";
+        private boolean registerUser(String fullName, String userType, String phoneNumber, String carPlate, String password) {
+            String sql = "INSERT INTO users (full_name, user_type, phone_number, car_plate, password) VALUES (?, ?, ?, ?, ?)";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, fullName);
                 pstmt.setString(2, userType);
                 pstmt.setString(3, phoneNumber);
                 pstmt.setString(4, carPlate);
-                pstmt.setString(5, passwordHash);
+                pstmt.setString(5, password);
                 pstmt.executeUpdate();
                 return true;
             } catch (SQLException e) {
@@ -139,13 +118,13 @@ public class ParkingServer {
         }
 
         private boolean loginUser(String fullName, String password) {
-            String sql = "SELECT password_hash FROM users WHERE full_name = ?";
+            String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, fullName);
                 ResultSet rs = pstmt.executeQuery();
                 if (rs.next()) {
-                    return BCrypt.checkpw(password, rs.getString("password_hash"));
+                    return rs.getString("password").equals(password);
                 }
             } catch (SQLException e) {
                 System.err.println("Error during login: " + e.getMessage());
@@ -153,44 +132,138 @@ public class ParkingServer {
             return false;
         }
 
-        private String getAvailableParkingSpots() {
-            StringBuilder availableSpots = new StringBuilder();
-            String sql = "SELECT spot_number FROM parking_spots WHERE is_reserved = 0";
-
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(sql)) {
-                while (rs.next()) {
-                    int spotNumber = rs.getInt("spot_number");
-                    availableSpots.append(spotNumber).append(". Spot ").append(spotNumber).append("\n");
-                }
-            } catch (SQLException e) {
-                System.err.println("Error fetching available spots: " + e.getMessage());
-            }
-
-            return availableSpots.length() > 0 ? availableSpots.toString() : "No available spots.";
+        private void viewAvailableParkingSpots() throws IOException {
+            String availableSpots = getAvailableParkingSpots();
+            out.println(availableSpots); // إرسال جميع المواقف
+            out.println("END_OF_SPOTS"); // إشارة نهاية
         }
 
-        private boolean reserveParkingSpot(int spotNumber, String reservedAt) {
-            String checkAvailability = "SELECT is_reserved FROM parking_spots WHERE spot_number = ?";
+        private void handleReserveSpot() throws IOException {
+            String availableSpots = getAvailableParkingSpots();
+
+            out.println(availableSpots);
+            out.println("END_OF_SPOTS"); // إشارة نهاية
+
+            if (availableSpots.equals("No parking spots available.")) {
+                return; // خروج مبكر إذا لم تكن هناك مواقف
+            }
+
+            try {
+                int spotNumber = Integer.parseInt(in.readLine());
+                String startTime = in.readLine();
+                String endTime = in.readLine();
+
+                if (reserveParkingSpot(spotNumber, startTime, endTime)) {
+                    out.println("Reservation successful!");
+                } else {
+                    out.println("The spot is already reserved during the specified time.");
+                }
+            } catch (NumberFormatException e) {
+                out.println("Invalid spot number. Please try again.");
+            }
+        }
+
+        private String getAvailableParkingSpots() {
+            StringBuilder spots = new StringBuilder();
+            String sql = """
+        SELECT spot_number FROM parking_spots 
+        WHERE spot_number NOT IN (
+            SELECT parking_spot_id FROM reservations
+            WHERE (reserved_at BETWEEN ? AND ?)
+            OR (reserved_until BETWEEN ? AND ?)
+            OR (? BETWEEN reserved_at AND reserved_until)
+            OR (? BETWEEN reserved_at AND reserved_until)
+        )
+    """;
+
             try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement checkStmt = conn.prepareStatement(checkAvailability)) {
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+                // تمرير التاريخ الحالي لجلب المواقف المتاحة
+                String currentTime = getCurrentTime(); // حدد الوقت الحالي
+                stmt.setString(1, currentTime); // بداية الوقت
+                stmt.setString(2, currentTime); // نهاية الوقت
+                stmt.setString(3, currentTime); // بداية الوقت
+                stmt.setString(4, currentTime); // نهاية الوقت
+                stmt.setString(5, currentTime); // بداية الوقت
+                stmt.setString(6, currentTime); // نهاية الوقت
+
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    int spotNumber = rs.getInt("spot_number");
+                    spots.append(spotNumber).append(". Spot ").append(spotNumber).append("\n");
+                }
+            } catch (SQLException e) {
+                System.err.println("Error fetching parking spots: " + e.getMessage());
+            }
+
+            System.out.println("Available spots to send: " + spots.toString()); // طباعة البيانات قبل الإرسال
+            return spots.length() > 0 ? spots.toString().trim() : "No parking spots available.";
+        }
+
+        private String getCurrentTime() {
+            // هنا يمكنك استخدام تاريخ الوقت الحالي بالصيغ المناسبة حسب قاعدة البيانات أو كما ترغب
+            return java.time.LocalDateTime.now().toString(); // تعديل على الصيغة إذا لزم الأمر
+        }
+
+        private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
+            String checkOverlap = """
+        SELECT 1 
+        FROM reservations 
+        WHERE parking_spot_id = (SELECT id FROM parking_spots WHERE spot_number = ?)
+          AND ((? BETWEEN reserved_at AND reserved_until) 
+           OR (? BETWEEN reserved_at AND reserved_until)
+           OR (reserved_at BETWEEN ? AND ?)
+           OR (reserved_until BETWEEN ? AND ?));
+    """;
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement checkStmt = conn.prepareStatement(checkOverlap)) {
                 checkStmt.setInt(1, spotNumber);
+                checkStmt.setString(2, startTime);
+                checkStmt.setString(3, endTime);
+                checkStmt.setString(4, startTime);
+                checkStmt.setString(5, endTime);
+                checkStmt.setString(6, startTime);
+                checkStmt.setString(7, endTime);
+
                 ResultSet rs = checkStmt.executeQuery();
-                if (rs.next() && rs.getBoolean("is_reserved")) {
-                    return false;
+                if (rs.next()) {
+                    return false; // الحجز يتداخل مع حجز موجود
                 }
 
-                String updateSql = "UPDATE parking_spots SET is_reserved = 1, reserved_at = ? WHERE spot_number = ?";
-                try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
-                    updateStmt.setString(1, reservedAt);
-                    updateStmt.setInt(2, spotNumber);
-                    return updateStmt.executeUpdate() > 0;
+                // إدخال الحجز الجديد
+                String insertReservation = """
+            INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until) 
+            VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?);
+        """;
+                try (PreparedStatement insertStmt = conn.prepareStatement(insertReservation)) {
+                    insertStmt.setInt(1, spotNumber);
+                    insertStmt.setInt(2, getCurrentUserId()); // استخدم معرف المستخدم الحالي
+                    insertStmt.setString(3, startTime);
+                    insertStmt.setString(4, endTime);
+                    return insertStmt.executeUpdate() > 0;
                 }
             } catch (SQLException e) {
                 System.err.println("Error reserving parking spot: " + e.getMessage());
             }
             return false;
         }
+
+        private int getCurrentUserId() {
+            String sql = "SELECT id FROM users WHERE full_name = ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, this.currentUser);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    return rs.getInt("id");
+                }
+            } catch (SQLException e) {
+                System.err.println("Error fetching user ID: " + e.getMessage());
+            }
+            return -1;
+        }
+
     }
 }
