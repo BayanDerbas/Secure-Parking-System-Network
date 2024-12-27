@@ -1,5 +1,4 @@
 package DataBase;
-
 import java.sql.*;
 import java.util.*;
 
@@ -53,48 +52,59 @@ public class DatabaseSetup {
                 System.out.println("Connected to the database!");
 
                 String createUsersTable = """
-                            CREATE TABLE IF NOT EXISTS users (
-                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                full_name TEXT NOT NULL,
-                                user_type TEXT NOT NULL,
-                                phone_number TEXT NOT NULL,
-                                car_plate TEXT NOT NULL,
-                                password TEXT NOT NULL
-                            );
-                        """;
-
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        full_name TEXT NOT NULL,
+                        user_type TEXT NOT NULL,
+                        phone_number TEXT NOT NULL,
+                        car_plate TEXT NOT NULL,
+                        password TEXT NOT NULL,
+                        wallet_balance REAL DEFAULT 0.0
+                    );
+                """;
 
                 String createParkingSpotsTable = """
-                        CREATE TABLE IF NOT EXISTS parking_spots (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            spot_number INTEGER NOT NULL UNIQUE,
-                            is_reserved BOOLEAN NOT NULL DEFAULT 0
-                        );
-                        """;
+                CREATE TABLE IF NOT EXISTS parking_spots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spot_number INTEGER NOT NULL UNIQUE,
+                    is_reserved BOOLEAN NOT NULL DEFAULT 0
+                );
+                """;
 
                 String createReservationsTable = """
-                        CREATE TABLE IF NOT EXISTS reservations (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            parking_spot_id INTEGER NOT NULL,
-                            user_id INTEGER NOT NULL,
-                            reserved_at TEXT NOT NULL,
-                            reserved_until TEXT NOT NULL,
-                            FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
-                            FOREIGN KEY (user_id) REFERENCES users(id)
-                        );
-                        """;
+                CREATE TABLE IF NOT EXISTS reservations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parking_spot_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    reserved_at TEXT NOT NULL,
+                    reserved_until TEXT NOT NULL,
+                    fee REAL NOT NULL DEFAULT 0.0,
+                    FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+                """;
 
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createUsersTable);
                     stmt.execute(createParkingSpotsTable);
                     stmt.execute(createReservationsTable);
                     System.out.println("Tables created successfully!");
+
+                    String insertInitialSpots = """
+                    INSERT INTO parking_spots (spot_number, is_reserved)
+                    VALUES 
+                        (1, 0), (2, 0), (3, 0), (4, 0), (5, 0),
+                        (6, 0), (7, 0), (8, 0), (9, 0), (10, 0)
+                    ON CONFLICT(spot_number) DO NOTHING;
+                    """;
+                    stmt.execute(insertInitialSpots);
+                    System.out.println("Initial parking spots added successfully!");
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Error creating tables: " + e.getMessage());
+            System.err.println("Error creating tables or inserting parking spots: " + e.getMessage());
         }
-    }    // عرض البيانات من الجداول
+    }
 
     private static void viewData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
@@ -113,8 +123,11 @@ public class DatabaseSetup {
                         String phoneNumber = rs.getString("phone_number");
                         String carPlate = rs.getString("car_plate");
                         String password = rs.getString("password");
+                        double walletBalance = rs.getDouble("wallet_balance");
+
                         System.out.println("ID: " + id + ", Name: " + fullName + ", Type: " + userType +
-                                ", Phone: " + phoneNumber + ", Car Plate: " + carPlate + ", Password: " + password);
+                                ", Phone: " + phoneNumber + ", Car Plate: " + carPlate +
+                                ", Password: " + password + ", Wallet Balance: " + walletBalance);
                     }
                 }
 
@@ -127,18 +140,18 @@ public class DatabaseSetup {
                         int id = rs.getInt("id");
                         int spotNumber = rs.getInt("spot_number");
                         boolean isReserved = rs.getBoolean("is_reserved");
-                        System.out.println("ID: " + id + ", Spot Number: " + spotNumber + ", Reserved: " + isReserved);
+                        System.out.println("ID: " + id + ", Spot Number: " + spotNumber);
                     }
                 }
 
                 // استعلام لعرض الحجوزات
                 String viewReservations = """
-                    SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until
-                    FROM reservations r
-                    JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                    JOIN users u ON r.user_id = u.id
-                    ORDER BY r.reserved_at;
-                    """;
+                        SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until
+                        FROM reservations r
+                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                        JOIN users u ON r.user_id = u.id
+                        ORDER BY r.reserved_at;
+                        """;
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(viewReservations)) {
                     System.out.println("Reservations:");
@@ -156,6 +169,7 @@ public class DatabaseSetup {
             System.err.println("Error retrieving data: " + e.getMessage());
         }
     }
+
     // حذف البيانات
     private static void deleteData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
@@ -177,6 +191,7 @@ public class DatabaseSetup {
             System.err.println("Error deleting data: " + e.getMessage());
         }
     }
+
     // حذف الجداول
     private static void dropTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {

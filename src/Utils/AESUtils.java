@@ -19,6 +19,7 @@ public class AESUtils {
         System.out.println("Encrypting Data [Algorithm: " + AES + "]: " + data + " -> " + encryptedString);
         return encryptedString;
     }
+
     public static String decrypt(String encryptedData) throws Exception {
         SecretKeySpec key = new SecretKeySpec(SECRET_KEY.getBytes(), AES);
         Cipher cipher = Cipher.getInstance(AES);
@@ -31,3 +32,4 @@ public class AESUtils {
         return decryptedString;
     }
 }
+
