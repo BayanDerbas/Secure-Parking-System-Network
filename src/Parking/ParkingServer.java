@@ -98,20 +98,13 @@ public class ParkingServer {
             out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
         }
         private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword, double walletBalance) {
-            String encryptedCarPlate;
-            String encryptedPhone;
-            String encryptedUserType;
-
             try {
-                encryptedCarPlate = AESUtils.encrypt(carPlate);
-                encryptedPhone = AESUtils.encrypt(phone);
-                encryptedUserType = AESUtils.encrypt(userType);
 
                 System.out.println("Encrypted data to be stored:");
                 System.out.println("Password: " + encryptedPassword);
-                System.out.println("Car Plate: " + encryptedCarPlate);
-                System.out.println("Phone: " + encryptedPhone);
-                System.out.println("User Type: " + encryptedUserType);
+                System.out.println("Phone: ");
+                System.out.println("User Type: " + userType);
+                System.out.println("Car Plate: " + carPlate);
                 System.out.println("Wallet Balance: " + walletBalance);
             } catch (Exception e) {
                 System.err.println("Error during encryption: " + e.getMessage());
@@ -122,11 +115,12 @@ public class ParkingServer {
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, fullName);
-                pstmt.setString(2, encryptedUserType);
-                pstmt.setString(3, encryptedPhone);
-                pstmt.setString(4, encryptedCarPlate);
+                pstmt.setString(2, userType);
+                pstmt.setString(3, phone);
+                pstmt.setString(4, carPlate);
                 pstmt.setString(5, encryptedPassword);
                 pstmt.setDouble(6, walletBalance);
+
                 pstmt.executeUpdate();
                 System.out.println("User registered successfully!");
                 return true;
@@ -422,17 +416,28 @@ public class ParkingServer {
                 }
 
                 int reservationId = reservationMap.get(reservationNumber);
-                if (cancelReservation(reservationId)) {
-                    out.println(AESUtils.encrypt("Reservation canceled successfully, and half of the fee was refunded."));
+                double refundAmount = calculateRefund(reservationId);
+
+                if (refundAmount > 0) {
+                    // تشفير مبلغ الاسترجاع باستخدام RSA
+                    String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem";
+                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), RSAUtils.loadPublicKey(publicKeyPath));
+                    out.println(encryptedRefund);
+
+                    if (cancelReservation(reservationId, refundAmount)) {
+                        out.println(AESUtils.encrypt("Reservation canceled successfully, and the refund was processed."));
+                    } else {
+                        out.println(AESUtils.encrypt("Failed to cancel the reservation."));
+                    }
                 } else {
-                    out.println(AESUtils.encrypt("Failed to cancel the reservation."));
+                    out.println(AESUtils.encrypt("No refund applicable for this reservation."));
                 }
             } catch (Exception e) {
                 System.err.println("Error handling cancellation: " + e.getMessage());
                 out.println(AESUtils.encrypt("An error occurred. Please try again."));
             }
         }
-        private boolean cancelReservation(int reservationId) {
+        private boolean cancelReservation(int reservationId, double refundAmount) {
             String sqlDelete = "DELETE FROM reservations WHERE id = ?";
             String sqlRefund = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
 
@@ -442,18 +447,6 @@ public class ParkingServer {
 
                 conn.setAutoCommit(false); // بدء معاملة
 
-                // استرجاع رسوم الحجز
-                String sqlFetchFee = "SELECT fee FROM reservations WHERE id = ?";
-                double fee = 0.0;
-                try (PreparedStatement fetchFeeStmt = conn.prepareStatement(sqlFetchFee)) {
-                    fetchFeeStmt.setInt(1, reservationId);
-                    try (ResultSet rs = fetchFeeStmt.executeQuery()) {
-                        if (rs.next()) {
-                            fee = rs.getDouble("fee");
-                        }
-                    }
-                }
-
                 // حذف الحجز
                 deleteStmt.setInt(1, reservationId);
                 if (deleteStmt.executeUpdate() <= 0) {
@@ -462,7 +455,7 @@ public class ParkingServer {
                 }
 
                 // إعادة نصف الرسوم
-                refundStmt.setDouble(1, fee / 2);
+                refundStmt.setDouble(1, refundAmount);
                 refundStmt.setInt(2, getCurrentUserId());
                 if (refundStmt.executeUpdate() <= 0) {
                     conn.rollback();
@@ -476,94 +469,24 @@ public class ParkingServer {
                 return false;
             }
         }
-        //        private void handleCancelReservation() throws Exception {
-//            // استقبال الرقم المشفر من العميل
-//            String encryptedReservationNumber = in.readLine();
-//            int reservationNumber;
-//
-//            try {
-//                // فك التشفير وتحويل الرقم
-//                String decryptedReservationNumber = AESUtils.decrypt(encryptedReservationNumber);
-//                reservationNumber = Integer.parseInt(decryptedReservationNumber);
-//            } catch (Exception e) {
-//                out.println(AESUtils.encrypt("Error: Invalid reservation number."));
-//                return;
-//            }
-//
-//            String query = """
-//        SELECT ps.spot_number, r.id, r.fee
-//        FROM reservations r
-//        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-//        WHERE r.user_id = ?
-//        ORDER BY r.id ASC
-//    """;
-//
-//            try (Connection conn = DriverManager.getConnection(DB_URL);
-//                 PreparedStatement stmt = conn.prepareStatement(query)) {
-//
-//                stmt.setInt(1, getCurrentUserId());
-//                ResultSet rs = stmt.executeQuery();
-//
-//                int currentIndex = 1;
-//                int spotNumber = -1;
-//                int reservationId = -1;
-//                double fee = 0.0;
-//
-//                // البحث عن الحجز المحدد من قبل العميل
-//                while (rs.next()) {
-//                    if (currentIndex == reservationNumber) {
-//                        spotNumber = rs.getInt("spot_number");
-//                        reservationId = rs.getInt("id");
-//                        fee = rs.getDouble("fee");
-//                        break;
-//                    }
-//                    currentIndex++;
-//                }
-//
-//                if (reservationId == -1) {
-//                    out.println(AESUtils.encrypt("Error: Invalid reservation number."));
-//                    return;
-//                }
-//
-//                // حذف الحجز من قاعدة البيانات
-//                String deleteSql = "DELETE FROM reservations WHERE id = ?";
-//                try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
-//                    deleteStmt.setInt(1, reservationId);
-//                    int rowsAffected = deleteStmt.executeUpdate();
-//
-//                    if (rowsAffected > 0) {
-//                        // حساب نصف المبلغ المسترد
-//                        double refundAmount = fee / 2;
-//                        if (refundUserBalance(refundAmount)) {
-//                            out.println(AESUtils.encrypt(
-//                                    "Reservation canceled successfully for Spot " + spotNumber +
-//                                            ". Half of the fee (" + refundAmount + ") has been refunded to your balance."));
-//                        } else {
-//                            out.println(AESUtils.encrypt("Reservation canceled, but refund failed. Please contact support."));
-//                        }
-//                    } else {
-//                        out.println(AESUtils.encrypt("Error: Reservation not found or already canceled."));
-//                    }
-//                }
-//            } catch (SQLException e) {
-//                System.err.println("Error canceling reservation: " + e.getMessage());
-//                out.println(AESUtils.encrypt("Error: Could not cancel reservation."));
-//            }
-//        }
-//        private boolean refundUserBalance(double amount) {
-//            String sql = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
-//            try (Connection conn = DriverManager.getConnection(DB_URL);
-//                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-//
-//                pstmt.setDouble(1, amount);           // إضافة المبلغ المسترد
-//                pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
-//
-//                return pstmt.executeUpdate() > 0; // التحقق من نجاح الإضافة
-//            } catch (SQLException e) {
-//                System.err.println("Error refunding user balance: " + e.getMessage());
-//                return false;
-//            }
-//        }
+        private double calculateRefund(int reservationId) {
+            String sql = "SELECT fee FROM reservations WHERE id = ? AND reserved_at > CURRENT_TIMESTAMP";
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, reservationId);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getDouble("fee") / 2; // إعادة نصف الرسوم
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("Error calculating refund: " + e.getMessage());
+            }
+
+            return 0.0;
+        }
         private boolean deductUserBalance(double amount) {
             String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);

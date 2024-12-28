@@ -44,22 +44,27 @@ public class ParkingClient {
         }
     }
     private static void handleRegister(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
-        out.println("register");
+        out.println("register"); // إرسال إشارة بدء التسجيل
+
         System.out.print("Enter your full name: ");
         out.println(scanner.nextLine());
+
         System.out.print("Enter your user type (Visitor/Employee): ");
         out.println(scanner.nextLine());
+
         System.out.print("Enter your phone number: ");
         out.println(scanner.nextLine());
+
         System.out.print("Enter your car plate: ");
         out.println(scanner.nextLine());
+
         System.out.print("Enter your password: ");
         try {
             String rawPassword = scanner.nextLine();
             System.out.println("Password before encryption: " + rawPassword); // Debugging
-            String encryptedPassword = AESUtils.encrypt(rawPassword);
+            String encryptedPassword = AESUtils.encrypt(rawPassword); // تشفير كلمة المرور
             System.out.println("Encrypted password: " + encryptedPassword); // Debugging
-            out.println(encryptedPassword);
+            out.println(encryptedPassword); // إرسال كلمة المرور المشفرة
         } catch (Exception e) {
             System.err.println("Error encrypting password: " + e.getMessage());
             return;
@@ -68,9 +73,9 @@ public class ParkingClient {
         System.out.print("Enter your wallet balance: ");
         double walletBalance = scanner.nextDouble();
         scanner.nextLine(); // استهلاك السطر المتبقي
-        out.println(walletBalance);
+        out.println(walletBalance); // إرسال الرصيد
 
-        System.out.println("Server response: " + in.readLine());
+        System.out.println("Server response: " + in.readLine()); // عرض استجابة الخادم
         System.out.println("Returning to main menu...");
     }
     private static void handleLogin(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
@@ -153,10 +158,19 @@ public class ParkingClient {
             // استقبال الرسوم
             double fee = Double.parseDouble(in.readLine());
             System.out.println("The reservation fee is: " + fee);
-            System.out.print("Do you want to proceed with the payment? (yes/no): ");
-            String confirmation = scanner.nextLine();
 
-            if (confirmation.equalsIgnoreCase("no")) {
+            System.out.print("Do you want to proceed with the payment? (yes/no): ");
+            String confirmation;
+            while (true) {
+                confirmation = scanner.nextLine().trim().toLowerCase();
+                if (confirmation.equals("yes") || confirmation.equals("no")) {
+                    break; // الخروج من الحلقة إذا كان الإدخال صحيحًا
+                } else {
+                    System.out.print("Invalid input. Please enter 'yes' or 'no': ");
+                }
+            }
+
+            if (confirmation.equals("no")) {
                 out.println("cancel_payment");
                 System.out.println("Reservation canceled.");
                 return;
@@ -199,61 +213,19 @@ public class ParkingClient {
 
             out.println(AESUtils.encrypt(String.valueOf(reservationNumber))); // إرسال الرقم بشكل مشفر
 
+            // استقبال رد الخادم حول الاسترجاع
+            String encryptedRefund = in.readLine();
+            String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
+            String refundAmount = RSAUtils.decrypt(encryptedRefund, RSAUtils.loadPrivateKey(privateKeyPath));
+            System.out.println("Refund Amount: " + refundAmount);
+
+            // استقبال الرسالة النهائية من الخادم
             String response = AESUtils.decrypt(in.readLine());
             System.out.println(response);
         } catch (Exception e) {
             System.err.println("Error during cancellation: " + e.getMessage());
         }
     }
-    //    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
-//        // طلب عرض الحجوزات من الخادم
-//        out.println("view_reservations");
-//        System.out.println("Your current reservations:");
-//
-//        StringBuilder reservations = new StringBuilder();
-//        String line;
-//
-//        while (true) {
-//            line = in.readLine();
-//            if (line == null) break; // معالجة الأخطاء في حالة انقطاع الاتصال
-//            try {
-//                line = AESUtils.decrypt(line); // فك التشفير
-//            } catch (Exception e) {
-//                System.err.println("Error decrypting data: " + e.getMessage());
-//                return;
-//            }
-//            if (line.equals("END_OF_RESERVATIONS")) break; // نهاية القائمة
-//            reservations.append(line).append("\n");
-//        }
-//
-//        System.out.println(reservations.toString().trim());
-//
-//        // التحقق من وجود حجوزات
-//        if (reservations.toString().trim().equals("No reservations found.")) {
-//            System.out.println("No reservations found. Returning to main menu.");
-//            return;
-//        }
-//
-//        // طلب رقم الحجز للإلغاء
-//        System.out.print("Enter the reservation number to cancel: ");
-//        int reservationNumber = scanner.nextInt();
-//        scanner.nextLine(); // استهلاك السطر المتبقي
-//
-//        try {
-//            // تشفير الرقم المرسل
-//            String encryptedReservationNumber = AESUtils.encrypt(String.valueOf(reservationNumber));
-//            out.println("cancel_reservation");
-//            out.println(encryptedReservationNumber);
-//
-//            // استقبال استجابة الخادم
-//            String response = AESUtils.decrypt(in.readLine());
-//            System.out.println(response);
-//            System.out.println("..............................................................");
-//        } catch (Exception e) {
-//            System.err.println("Error in cancellation process: " + e.getMessage());
-//            System.out.println("..............................................................");
-//        }
-//    }
     private static void handleViewReservations(PrintWriter out, BufferedReader in) throws IOException {
         // إرسال طلب عرض الحجوزات إلى الخادم
         out.println("view_reservations");
