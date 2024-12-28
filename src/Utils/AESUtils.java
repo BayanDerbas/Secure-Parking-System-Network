@@ -15,6 +15,7 @@ public class AESUtils {
         String encryptedText = Base64.getEncoder().encodeToString(encryptedData);
 
         // طباعة النصوص المشفرة مع اسم الخوارزمية
+        System.out.println("........................AES Encrypting........................");
         System.out.println("Encrypting using " + AES + "...");
         System.out.println("Plain Text: " + data);
         System.out.println("Encrypted Text: " + encryptedText);
@@ -30,6 +31,7 @@ public class AESUtils {
         String decryptedText = new String(cipher.doFinal(decodedData));
 
         // طباعة النصوص المفككة مع اسم الخوارزمية
+        System.out.println("........................AES Decrypting........................");
         System.out.println("Decrypting using " + AES + "...");
         System.out.println("Encrypted Text: " + encryptedData);
         System.out.println("Decrypted Text: " + decryptedText);

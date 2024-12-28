@@ -22,6 +22,7 @@ public class RSAUtils {
         byte[] encryptedBytes = cipher.doFinal(plainText.getBytes());
         String encryptedText = Base64.getEncoder().encodeToString(encryptedBytes);
         // طباعة النصوص المشفرة مع اسم الخوارزمية
+        System.out.println("........................RSA Encrypting........................");
         System.out.println("Encrypting using " + ALGORITHM + "...");
         System.out.println("Plain Text: " + plainText);
         System.out.println("Encrypted Text: " + encryptedText);
@@ -36,6 +37,7 @@ public class RSAUtils {
         String decryptedText = new String(cipher.doFinal(decodedBytes));
 
         // طباعة النصوص المفككة مع اسم الخوارزمية
+        System.out.println("........................RSA Decrypting........................");
         System.out.println("Decrypting using " + ALGORITHM + "...");
         System.out.println("Encrypted Text: " + encryptedText);
         System.out.println("Decrypted Text: " + decryptedText);

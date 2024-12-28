@@ -1,5 +1,6 @@
 package Parking;
 import Utils.AESUtils;
+import Utils.DigitalSignatureUtil;
 import Utils.RSAUtils;
 import java.io.*;
 import java.net.Socket;
@@ -125,7 +126,6 @@ public class ParkingClient {
         }
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
-        // طلب عرض المواقف المتاحة
         out.println("reserve_spot");
         System.out.println("Available parking spots:");
 
@@ -133,7 +133,7 @@ public class ParkingClient {
         String line;
         while (true) {
             line = in.readLine();
-            if (line.equals("END_OF_SPOTS")) break; // نهاية القائمة
+            if (line.equals("END_OF_SPOTS")) break;
             availableSpots.append(line).append("\n");
         }
         System.out.println(availableSpots.toString().trim());
@@ -146,11 +146,9 @@ public class ParkingClient {
         try {
             System.out.print("Enter the spot number: ");
             int spotNumber = scanner.nextInt();
-            scanner.nextLine(); // استهلاك السطر المتبقي
+            scanner.nextLine();
 
-            // قراءة الوقت المدخل من العميل مع التأكد من التنسيق الصحيح
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-
             System.out.print("Enter the start time (yyyy-MM-dd HH:mm): ");
             String startTimeInput = scanner.nextLine();
             LocalDateTime startTime = parseDateTime(startTimeInput, formatter);
@@ -159,53 +157,35 @@ public class ParkingClient {
             String endTimeInput = scanner.nextLine();
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
-            // تشفير البيانات باستخدام AES
+            // تشفير البيانات
             out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
-            out.println(AESUtils.encrypt(startTime.format(formatter)));  // تشفير الوقت بتنسيق النص
-            out.println(AESUtils.encrypt(endTime.format(formatter)));    // تشفير الوقت بتنسيق النص
+            out.println(AESUtils.encrypt(startTime.format(formatter)));
+            out.println(AESUtils.encrypt(endTime.format(formatter)));
 
-            // استقبال النص المشفر
+            // توقيع الحجز
+            PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
+            String dataToSign = spotNumber + "|" + startTime.format(formatter) + "|" + endTime.format(formatter); // استخدام "|" كفاصل
+            String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
+            out.println(reservationSignature);
+
+            // استقبال الرسوم
             String encryptedFee = in.readLine();
-            System.out.println("Received encrypted fee: " + encryptedFee);
-
-            try {
-                // تحميل المفتاح الخاص (مثال: من ملف)
-                PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-
-                // فك تشفير الرسوم باستخدام المفتاح الخاص
-                String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
-
-                // تحويل النص المفكوك إلى قيمة عددية (double)
-                double fee = Double.parseDouble(decryptedFee);
-
-                // طباعة الرسوم
-                System.out.println("The reservation fee is: " + fee);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-
+            String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
+            double fee = Double.parseDouble(decryptedFee);
+            System.out.println("The reservation fee is: " + fee);
 
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
-            String confirmation;
-            while (true) {
-                confirmation = scanner.nextLine().trim().toLowerCase();
-                if (confirmation.equals("yes") || confirmation.equals("no")) {
-                    break; // الخروج من الحلقة إذا كان الإدخال صحيحًا
-                } else {
-                    System.out.print("Invalid input. Please enter 'yes' or 'no': ");
-                }
-            }
-
+            String confirmation = scanner.nextLine().trim().toLowerCase();
             if (confirmation.equals("no")) {
                 out.println("cancel_payment");
                 System.out.println("Reservation canceled.");
                 return;
             }
 
-            // تشفير الدفع باستخدام المفتاح العمومي
-            String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem"; // تعديل المسار حسب الحاجة
-            String encryptedPayment = RSAUtils.encrypt("confirm_payment", RSAUtils.loadPublicKey(publicKeyPath));
-            out.println(encryptedPayment);
+            // توقيع الدفع
+            String paymentConfirmation = "confirm_payment";
+            String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
+            out.println(paymentSignature);
 
             // استقبال استجابة الخادم
             String response = AESUtils.decrypt(in.readLine());
@@ -237,7 +217,15 @@ public class ParkingClient {
             int reservationNumber = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
 
-            out.println(AESUtils.encrypt(String.valueOf(reservationNumber))); // إرسال الرقم بشكل مشفر
+            // إرسال الرقم المشفر
+            out.println(AESUtils.encrypt(String.valueOf(reservationNumber)));
+
+            // تحميل المفتاح الخاص لتوقيع البيانات
+            PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
+
+            // توقيع الرقم المراد إلغاؤه
+            String signedData = DigitalSignatureUtil.generateDigitalSignature(String.valueOf(reservationNumber), privateKey);
+            out.println(signedData); // إرسال التوقيع للخادم
 
             // استقبال رد الخادم حول الاسترجاع
             String encryptedRefund = in.readLine();
