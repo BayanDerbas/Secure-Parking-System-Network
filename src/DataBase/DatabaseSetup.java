@@ -44,7 +44,6 @@ public class DatabaseSetup {
             }
         }
     }
-
     // إنشاء الجداول إذا لم تكن موجودة
     private static void createTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
@@ -105,7 +104,6 @@ public class DatabaseSetup {
             System.err.println("Error creating tables or inserting parking spots: " + e.getMessage());
         }
     }
-
     private static void viewData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {
@@ -169,7 +167,6 @@ public class DatabaseSetup {
             System.err.println("Error retrieving data: " + e.getMessage());
         }
     }
-
     // حذف البيانات
     private static void deleteData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
@@ -191,7 +188,6 @@ public class DatabaseSetup {
             System.err.println("Error deleting data: " + e.getMessage());
         }
     }
-
     // حذف الجداول
     private static void dropTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {

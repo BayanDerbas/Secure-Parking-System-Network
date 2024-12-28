@@ -1,9 +1,12 @@
 package Parking;
 import Utils.AESUtils;
-
+import Utils.RSAUtils;
 import java.io.*;
 import java.net.*;
 import java.sql.*;
+import java.util.HashMap;
+import java.util.Map;
+
 public class ParkingServer {
     private static final int PORT = 3000;
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
@@ -186,78 +189,6 @@ public class ParkingServer {
             out.println(availableSpots); // إرسال جميع المواقف
             out.println("END_OF_SPOTS"); // إشارة نهاية
         }
-        private void handleReserveSpot() throws Exception {
-            // عرض المواقف المتاحة
-            String availableSpots = getAvailableParkingSpots();
-            out.println(availableSpots);
-            out.println("END_OF_SPOTS");
-            if (availableSpots.equals("No parking spots available.")) {
-                return;
-            }
-
-            try {
-                // استقبال البيانات من العميل
-                String encryptedSpotNumber = in.readLine();
-                String encryptedStartTime = in.readLine();
-                String encryptedEndTime = in.readLine();
-
-                // فك التشفير
-                int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
-                String startTime = AESUtils.decrypt(encryptedStartTime);
-                String endTime = AESUtils.decrypt(encryptedEndTime);
-
-                // حساب الرسوم
-                double fee = 10.0; // الرسوم الثابتة
-                out.println(fee); // إرسال الرسوم للعميل (بدون تشفير)
-
-                // استقبال تأكيد العميل
-                String paymentConfirmation = in.readLine();
-                if (paymentConfirmation.equals("cancel_payment")) {
-                    System.out.println("Reservation cancelled by client.");
-                    return;
-                }
-
-                // خصم الرسوم من رصيد العميل
-                if (deductUserBalance(fee)) {
-                    if (reserveParkingSpot(spotNumber, startTime, endTime)) {
-                        out.println(AESUtils.encrypt("Reservation successful!"));
-                    } else {
-                        out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
-                        refundUserBalance(fee); // استرجاع الرسوم في حالة الفشل
-                    }
-                } else {
-                    out.println(AESUtils.encrypt("Insufficient balance. Reservation failed."));
-                }
-            } catch (Exception e) {
-                System.err.println("Error during reservation: " + e.getMessage());
-                out.println(AESUtils.encrypt("An error occurred during reservation. Please try again."));
-            }
-        }
-        private boolean deductUserBalance(double amount) {
-            String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setDouble(1, amount);
-                pstmt.setInt(2, getCurrentUserId());
-                pstmt.setDouble(3, amount);
-
-                return pstmt.executeUpdate() > 0;
-            } catch (SQLException e) {
-                System.err.println("Error deducting user balance: " + e.getMessage());
-            }
-            return false;
-        }
-        private void refundUserBalance(double amount) {
-            String sql = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setDouble(1, amount);
-                pstmt.setInt(2, getCurrentUserId());
-                pstmt.executeUpdate();
-            } catch (SQLException e) {
-                System.err.println("Error refunding user balance: " + e.getMessage());
-            }
-        }
         private String getAvailableParkingSpots() {
             StringBuilder spots = new StringBuilder();
             String sql = """
@@ -394,66 +325,259 @@ public class ParkingServer {
             }
             out.println(AESUtils.encrypt("END_OF_RESERVATIONS")); // إشارة النهاية
         }
-        private void handleCancelReservation() throws Exception {
-            String encryptedSpotNumber = in.readLine(); // استقبال الرقم المشفر
-            int spotNumber;
+        private void handleReserveSpot() throws Exception {
+            String availableSpots = getAvailableParkingSpots();
+            out.println(availableSpots);
+            out.println("END_OF_SPOTS");
 
-            try {
-                String decryptedSpotNumber = AESUtils.decrypt(encryptedSpotNumber); // فك التشفير
-                spotNumber = Integer.parseInt(decryptedSpotNumber);
-            } catch (Exception e) {
-                out.println(AESUtils.encrypt("Error: Invalid spot number.")); // استجابة مشفرة
+            if (availableSpots.equals("No parking spots available.")) {
                 return;
             }
 
-            String getFeeSql = """
-        SELECT fee
-        FROM reservations
-        WHERE parking_spot_id = (SELECT id FROM parking_spots WHERE spot_number = ?)
-        AND user_id = ?
-    """;
+            try {
+                String encryptedSpotNumber = in.readLine();
+                String encryptedStartTime = in.readLine();
+                String encryptedEndTime = in.readLine();
 
-            String deleteSql = """
-        DELETE FROM reservations
-        WHERE parking_spot_id = (SELECT id FROM parking_spots WHERE spot_number = ?)
-        AND user_id = ?
+                int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
+                String startTime = AESUtils.decrypt(encryptedStartTime);
+                String endTime = AESUtils.decrypt(encryptedEndTime);
+
+                double fee = 10.0;
+                out.println(fee);
+
+                String encryptedPayment = in.readLine();
+                String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
+                String paymentConfirmation = RSAUtils.decrypt(encryptedPayment, RSAUtils.loadPrivateKey(privateKeyPath));
+
+                if (!paymentConfirmation.equals("confirm_payment")) {
+                    out.println(AESUtils.encrypt("Error: Payment not confirmed."));
+                    return;
+                }
+
+                if (!deductUserBalance(fee)) {
+                    out.println(AESUtils.encrypt("Error: Insufficient balance."));
+                    return;
+                }
+
+                if (reserveParkingSpot(spotNumber, startTime, endTime)) {
+                    out.println(AESUtils.encrypt("Reservation successful!"));
+                } else {
+                    out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
+                }
+            } catch (Exception e) {
+                System.err.println("Error during reservation: " + e.getMessage());
+                out.println(AESUtils.encrypt("An error occurred during reservation. Please try again."));
+            }
+        }
+        private void handleCancelReservation() throws Exception {
+            StringBuilder reservations = new StringBuilder();
+            String sqlFetch = """
+        SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
     """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement getFeeStmt = conn.prepareStatement(getFeeSql);
-                 PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
+                 PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {
 
-                // الحصول على الرسوم من قاعدة البيانات
-                getFeeStmt.setInt(1, spotNumber);
-                getFeeStmt.setInt(2, getCurrentUserId());
+                fetchStmt.setInt(1, getCurrentUserId());
+                ResultSet rs = fetchStmt.executeQuery();
+
+                int index = 1;
+                Map<Integer, Integer> reservationMap = new HashMap<>(); // خريطة لحفظ معرّفات الحجوزات
+
+                while (rs.next()) {
+                    int reservationId = rs.getInt("id");
+                    int spotNumber = rs.getInt("spot_number");
+                    String reservedAt = rs.getString("reserved_at");
+                    String reservedUntil = rs.getString("reserved_until");
+                    double fee = rs.getDouble("fee");
+
+                    reservationMap.put(index, reservationId); // تخزين معرّف الحجز
+
+                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: " + fee + ")";
+                    String encryptedData = AESUtils.encrypt(data);
+                    reservations.append(encryptedData).append("\n");
+                    index++;
+                }
+
+                if (reservations.length() > 0) {
+                    out.println(reservations.toString().trim());
+                } else {
+                    out.println(AESUtils.encrypt("No reservations found."));
+                }
+                out.println(AESUtils.encrypt("END_OF_RESERVATIONS"));
+
+                if (reservationMap.isEmpty()) return;
+
+                // استقبال الرقم
+                String encryptedNumber = in.readLine();
+                int reservationNumber = Integer.parseInt(AESUtils.decrypt(encryptedNumber));
+
+                if (!reservationMap.containsKey(reservationNumber)) {
+                    out.println(AESUtils.encrypt("Invalid reservation number."));
+                    return;
+                }
+
+                int reservationId = reservationMap.get(reservationNumber);
+                if (cancelReservation(reservationId)) {
+                    out.println(AESUtils.encrypt("Reservation canceled successfully, and half of the fee was refunded."));
+                } else {
+                    out.println(AESUtils.encrypt("Failed to cancel the reservation."));
+                }
+            } catch (Exception e) {
+                System.err.println("Error handling cancellation: " + e.getMessage());
+                out.println(AESUtils.encrypt("An error occurred. Please try again."));
+            }
+        }
+        private boolean cancelReservation(int reservationId) {
+            String sqlDelete = "DELETE FROM reservations WHERE id = ?";
+            String sqlRefund = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement deleteStmt = conn.prepareStatement(sqlDelete);
+                 PreparedStatement refundStmt = conn.prepareStatement(sqlRefund)) {
+
+                conn.setAutoCommit(false); // بدء معاملة
+
+                // استرجاع رسوم الحجز
+                String sqlFetchFee = "SELECT fee FROM reservations WHERE id = ?";
                 double fee = 0.0;
-                try (ResultSet rs = getFeeStmt.executeQuery()) {
-                    if (rs.next()) {
-                        fee = rs.getDouble("fee");
-                    } else {
-                        out.println(AESUtils.encrypt("Error: Reservation not found or already canceled.")); // استجابة مشفرة
-                        return;
+                try (PreparedStatement fetchFeeStmt = conn.prepareStatement(sqlFetchFee)) {
+                    fetchFeeStmt.setInt(1, reservationId);
+                    try (ResultSet rs = fetchFeeStmt.executeQuery()) {
+                        if (rs.next()) {
+                            fee = rs.getDouble("fee");
+                        }
                     }
                 }
 
                 // حذف الحجز
-                deleteStmt.setInt(1, spotNumber);
-                deleteStmt.setInt(2, getCurrentUserId());
-                int rowsAffected = deleteStmt.executeUpdate();
-
-                if (rowsAffected > 0) {
-                    // استرداد نصف المبلغ
-                    double refundAmount = fee / 2;
-                    refundUserBalance(refundAmount);
-                    out.println(AESUtils.encrypt("Reservation canceled successfully. Half of the fee (" + refundAmount + ") has been refunded to your balance.")); // استجابة مشفرة
-                } else {
-                    out.println(AESUtils.encrypt("Error: Reservation not found or already canceled.")); // استجابة مشفرة
+                deleteStmt.setInt(1, reservationId);
+                if (deleteStmt.executeUpdate() <= 0) {
+                    conn.rollback();
+                    return false;
                 }
+
+                // إعادة نصف الرسوم
+                refundStmt.setDouble(1, fee / 2);
+                refundStmt.setInt(2, getCurrentUserId());
+                if (refundStmt.executeUpdate() <= 0) {
+                    conn.rollback();
+                    return false;
+                }
+
+                conn.commit(); // تأكيد المعاملة
+                return true;
             } catch (SQLException e) {
                 System.err.println("Error canceling reservation: " + e.getMessage());
-                out.println(AESUtils.encrypt("Error: Could not cancel reservation.")); // استجابة مشفرة
+                return false;
             }
         }
+        //        private void handleCancelReservation() throws Exception {
+//            // استقبال الرقم المشفر من العميل
+//            String encryptedReservationNumber = in.readLine();
+//            int reservationNumber;
+//
+//            try {
+//                // فك التشفير وتحويل الرقم
+//                String decryptedReservationNumber = AESUtils.decrypt(encryptedReservationNumber);
+//                reservationNumber = Integer.parseInt(decryptedReservationNumber);
+//            } catch (Exception e) {
+//                out.println(AESUtils.encrypt("Error: Invalid reservation number."));
+//                return;
+//            }
+//
+//            String query = """
+//        SELECT ps.spot_number, r.id, r.fee
+//        FROM reservations r
+//        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+//        WHERE r.user_id = ?
+//        ORDER BY r.id ASC
+//    """;
+//
+//            try (Connection conn = DriverManager.getConnection(DB_URL);
+//                 PreparedStatement stmt = conn.prepareStatement(query)) {
+//
+//                stmt.setInt(1, getCurrentUserId());
+//                ResultSet rs = stmt.executeQuery();
+//
+//                int currentIndex = 1;
+//                int spotNumber = -1;
+//                int reservationId = -1;
+//                double fee = 0.0;
+//
+//                // البحث عن الحجز المحدد من قبل العميل
+//                while (rs.next()) {
+//                    if (currentIndex == reservationNumber) {
+//                        spotNumber = rs.getInt("spot_number");
+//                        reservationId = rs.getInt("id");
+//                        fee = rs.getDouble("fee");
+//                        break;
+//                    }
+//                    currentIndex++;
+//                }
+//
+//                if (reservationId == -1) {
+//                    out.println(AESUtils.encrypt("Error: Invalid reservation number."));
+//                    return;
+//                }
+//
+//                // حذف الحجز من قاعدة البيانات
+//                String deleteSql = "DELETE FROM reservations WHERE id = ?";
+//                try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
+//                    deleteStmt.setInt(1, reservationId);
+//                    int rowsAffected = deleteStmt.executeUpdate();
+//
+//                    if (rowsAffected > 0) {
+//                        // حساب نصف المبلغ المسترد
+//                        double refundAmount = fee / 2;
+//                        if (refundUserBalance(refundAmount)) {
+//                            out.println(AESUtils.encrypt(
+//                                    "Reservation canceled successfully for Spot " + spotNumber +
+//                                            ". Half of the fee (" + refundAmount + ") has been refunded to your balance."));
+//                        } else {
+//                            out.println(AESUtils.encrypt("Reservation canceled, but refund failed. Please contact support."));
+//                        }
+//                    } else {
+//                        out.println(AESUtils.encrypt("Error: Reservation not found or already canceled."));
+//                    }
+//                }
+//            } catch (SQLException e) {
+//                System.err.println("Error canceling reservation: " + e.getMessage());
+//                out.println(AESUtils.encrypt("Error: Could not cancel reservation."));
+//            }
+//        }
+//        private boolean refundUserBalance(double amount) {
+//            String sql = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
+//            try (Connection conn = DriverManager.getConnection(DB_URL);
+//                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+//
+//                pstmt.setDouble(1, amount);           // إضافة المبلغ المسترد
+//                pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
+//
+//                return pstmt.executeUpdate() > 0; // التحقق من نجاح الإضافة
+//            } catch (SQLException e) {
+//                System.err.println("Error refunding user balance: " + e.getMessage());
+//                return false;
+//            }
+//        }
+        private boolean deductUserBalance(double amount) {
+            String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
+                pstmt.setDouble(1, amount);           // خصم المبلغ المطلوب
+                pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
+                pstmt.setDouble(3, amount);          // التأكد من وجود رصيد كافٍ
+
+                return pstmt.executeUpdate() > 0; // التحقق من نجاح الخصم
+            } catch (SQLException e) {
+                System.err.println("Error deducting user balance: " + e.getMessage());
+                return false; // في حالة حدوث خطأ أو عدم كفاية الرصيد
+            }
+        }
     }
 }

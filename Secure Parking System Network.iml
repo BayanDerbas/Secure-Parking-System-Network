@@ -9,5 +9,6 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="jbcrypt-0.4" level="project" />
     <orderEntry type="library" name="sqlite-jdbc-3.42.0.0" level="project" />
+    <orderEntry type="library" name="bcprov-jdk18on-1.79" level="project" />
   </component>
 </module>

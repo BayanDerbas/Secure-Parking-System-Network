@@ -1,5 +1,6 @@
 package Parking;
 import Utils.AESUtils;
+import Utils.RSAUtils;
 import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
@@ -115,7 +116,7 @@ public class ParkingClient {
         }
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
-        // إرسال طلب عرض المواقف المتاحة إلى الخادم
+        // طلب عرض المواقف المتاحة
         out.println("reserve_spot");
         System.out.println("Available parking spots:");
 
@@ -123,12 +124,11 @@ public class ParkingClient {
         String line;
         while (true) {
             line = in.readLine();
-            if (line.equals("END_OF_SPOTS")) break; // إشارة النهاية
+            if (line.equals("END_OF_SPOTS")) break; // نهاية القائمة
             availableSpots.append(line).append("\n");
         }
         System.out.println(availableSpots.toString().trim());
 
-        // إذا لم تكن هناك مواقف متاحة
         if (availableSpots.toString().trim().equals("No parking spots available.")) {
             System.out.println("No parking spots available. Returning to main menu.");
             return;
@@ -145,12 +145,12 @@ public class ParkingClient {
             System.out.print("Enter the end time (yyyy-MM-dd HH:mm): ");
             String endTime = scanner.nextLine();
 
-            // تشفير البيانات قبل الإرسال
+            // تشفير البيانات باستخدام AES
             out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
             out.println(AESUtils.encrypt(startTime));
             out.println(AESUtils.encrypt(endTime));
 
-            // استقبال الرسوم (بدون تشفير)
+            // استقبال الرسوم
             double fee = Double.parseDouble(in.readLine());
             System.out.println("The reservation fee is: " + fee);
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
@@ -161,64 +161,99 @@ public class ParkingClient {
                 System.out.println("Reservation canceled.");
                 return;
             }
-            out.println("confirm_payment"); // إرسال تأكيد الدفع
+
+            // تشفير الدفع باستخدام المفتاح العمومي
+            String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem"; // تعديل المسار حسب الحاجة
+            String encryptedPayment = RSAUtils.encrypt("confirm_payment", RSAUtils.loadPublicKey(publicKeyPath));
+            out.println(encryptedPayment);
+
             // استقبال استجابة الخادم
             String response = AESUtils.decrypt(in.readLine());
             System.out.println(response);
-            System.out.println("..............................................................");
         } catch (Exception e) {
             System.err.println("Error during reservation: " + e.getMessage());
-            System.out.println("..............................................................");
         }
     }
     private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
-        // إرسال طلب عرض الحجوزات المرتبطة بالمستخدم
-        out.println("view_reservations");
-        System.out.println("Your current reservations:");
+        out.println("cancel_reservation"); // إرسال أمر الإلغاء للخادم
 
+        System.out.println("Your reservations:");
         StringBuilder reservations = new StringBuilder();
         String line;
         while (true) {
-            line = in.readLine();
-            if (line == null) break; // معالجة الأخطاء في حالة انقطاع الاتصال
-            try {
-                line = AESUtils.decrypt(line); // فك التشفير
-            } catch (Exception e) {
-                System.err.println("Error decrypting data: " + e.getMessage());
-                return;
-            }
-            if (line.equals("END_OF_RESERVATIONS")) break; // نهاية البيانات
+            line = AESUtils.decrypt(in.readLine()); // استقبال البيانات بشكل مشفر
+            if (line.equals("END_OF_RESERVATIONS")) break;
             reservations.append(line).append("\n");
         }
-        // عرض الحجوزات
         System.out.println(reservations.toString().trim());
 
-        // إذا لم يكن هناك حجوزات
         if (reservations.toString().trim().equals("No reservations found.")) {
-            System.out.println("No reservations found. Returning to main menu.");
+            System.out.println("You have no reservations to cancel.");
             return;
         }
 
-        // إدخال رقم الموقف لإلغاء الحجز
-        System.out.print("Enter the spot number to cancel: ");
-        int spotNumber = scanner.nextInt();
-        scanner.nextLine(); // استهلاك السطر المتبقي
-
         try {
-            String encryptedSpotNumber = AESUtils.encrypt(String.valueOf(spotNumber)); // تشفير الرقم
-            out.println("cancel_reservation"); // إرسال الطلب
-            out.println(encryptedSpotNumber); // إرسال الرقم المشفر
+            System.out.print("Enter the reservation number to cancel: ");
+            int reservationNumber = scanner.nextInt();
+            scanner.nextLine(); // استهلاك السطر المتبقي
 
-            String response = AESUtils.decrypt(in.readLine()); // فك التشفير للاستجابة
+            out.println(AESUtils.encrypt(String.valueOf(reservationNumber))); // إرسال الرقم بشكل مشفر
+
+            String response = AESUtils.decrypt(in.readLine());
             System.out.println(response);
-            System.out.println("..............................................................");
-
         } catch (Exception e) {
-            System.err.println("Error in cancellation process: " + e.getMessage());
-            System.out.println("..............................................................");
-
+            System.err.println("Error during cancellation: " + e.getMessage());
         }
     }
+    //    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
+//        // طلب عرض الحجوزات من الخادم
+//        out.println("view_reservations");
+//        System.out.println("Your current reservations:");
+//
+//        StringBuilder reservations = new StringBuilder();
+//        String line;
+//
+//        while (true) {
+//            line = in.readLine();
+//            if (line == null) break; // معالجة الأخطاء في حالة انقطاع الاتصال
+//            try {
+//                line = AESUtils.decrypt(line); // فك التشفير
+//            } catch (Exception e) {
+//                System.err.println("Error decrypting data: " + e.getMessage());
+//                return;
+//            }
+//            if (line.equals("END_OF_RESERVATIONS")) break; // نهاية القائمة
+//            reservations.append(line).append("\n");
+//        }
+//
+//        System.out.println(reservations.toString().trim());
+//
+//        // التحقق من وجود حجوزات
+//        if (reservations.toString().trim().equals("No reservations found.")) {
+//            System.out.println("No reservations found. Returning to main menu.");
+//            return;
+//        }
+//
+//        // طلب رقم الحجز للإلغاء
+//        System.out.print("Enter the reservation number to cancel: ");
+//        int reservationNumber = scanner.nextInt();
+//        scanner.nextLine(); // استهلاك السطر المتبقي
+//
+//        try {
+//            // تشفير الرقم المرسل
+//            String encryptedReservationNumber = AESUtils.encrypt(String.valueOf(reservationNumber));
+//            out.println("cancel_reservation");
+//            out.println(encryptedReservationNumber);
+//
+//            // استقبال استجابة الخادم
+//            String response = AESUtils.decrypt(in.readLine());
+//            System.out.println(response);
+//            System.out.println("..............................................................");
+//        } catch (Exception e) {
+//            System.err.println("Error in cancellation process: " + e.getMessage());
+//            System.out.println("..............................................................");
+//        }
+//    }
     private static void handleViewReservations(PrintWriter out, BufferedReader in) throws IOException {
         // إرسال طلب عرض الحجوزات إلى الخادم
         out.println("view_reservations");
@@ -239,8 +274,8 @@ public class ParkingClient {
                 break;
             }
             reservations.append(line).append("\n");
-            System.out.println("..............................................................");
         }
         System.out.println(reservations.toString().trim());
+        System.out.println("..............................................................");
     }
 }
