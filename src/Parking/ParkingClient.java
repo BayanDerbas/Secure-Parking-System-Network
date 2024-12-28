@@ -3,6 +3,7 @@ import Utils.AESUtils;
 import Utils.RSAUtils;
 import java.io.*;
 import java.net.Socket;
+import java.security.PrivateKey;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -163,9 +164,26 @@ public class ParkingClient {
             out.println(AESUtils.encrypt(startTime.format(formatter)));  // تشفير الوقت بتنسيق النص
             out.println(AESUtils.encrypt(endTime.format(formatter)));    // تشفير الوقت بتنسيق النص
 
-            // استقبال الرسوم
-            double fee = Double.parseDouble(in.readLine());
-            System.out.println("The reservation fee is: " + fee);
+            // استقبال النص المشفر
+            String encryptedFee = in.readLine();
+            System.out.println("Received encrypted fee: " + encryptedFee);
+
+            try {
+                // تحميل المفتاح الخاص (مثال: من ملف)
+                PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
+
+                // فك تشفير الرسوم باستخدام المفتاح الخاص
+                String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
+
+                // تحويل النص المفكوك إلى قيمة عددية (double)
+                double fee = Double.parseDouble(decryptedFee);
+
+                // طباعة الرسوم
+                System.out.println("The reservation fee is: " + fee);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
 
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
             String confirmation;

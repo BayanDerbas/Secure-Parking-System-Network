@@ -3,12 +3,15 @@ import Utils.AESUtils;
 import Utils.RSAUtils;
 import java.io.*;
 import java.net.*;
+import java.security.PublicKey;
 import java.sql.*;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.bouncycastle.asn1.x509.ObjectDigestInfo.publicKey;
 
 public class ParkingServer {
     private static final int PORT = 3000;
@@ -357,9 +360,21 @@ public class ParkingServer {
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
+                // حساب الرسوم
                 double fee = calculateFee(start, end);
+                // تحويل الرسوم إلى نص
+                String feeText = String.valueOf(fee);
+                // تحميل المفتاح العام (مثال: من ملف)
+                PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
+                try {
+                    // تشفير الرسوم باستخدام المفتاح العام
+                    String encryptedFee = RSAUtils.encrypt(feeText, publicKey);
 
-                out.println(fee); // إرسال الرسوم للعميل
+                    // إرسال الرسوم المشفرة
+                    out.println(encryptedFee); // إرسال النص المشفر
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
 
                 String encryptedPayment = in.readLine();
                 String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
@@ -521,6 +536,5 @@ public class ParkingServer {
                 out.println(AESUtils.encrypt("An error occurred. Please try again."));
             }
         }
-
     }
 }
