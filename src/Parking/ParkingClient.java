@@ -3,6 +3,9 @@ import Utils.AESUtils;
 import Utils.RSAUtils;
 import java.io.*;
 import java.net.Socket;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Scanner;
 
 public class ParkingClient {
@@ -144,16 +147,21 @@ public class ParkingClient {
             int spotNumber = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
 
+            // قراءة الوقت المدخل من العميل مع التأكد من التنسيق الصحيح
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
             System.out.print("Enter the start time (yyyy-MM-dd HH:mm): ");
-            String startTime = scanner.nextLine();
+            String startTimeInput = scanner.nextLine();
+            LocalDateTime startTime = parseDateTime(startTimeInput, formatter);
 
             System.out.print("Enter the end time (yyyy-MM-dd HH:mm): ");
-            String endTime = scanner.nextLine();
+            String endTimeInput = scanner.nextLine();
+            LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
             // تشفير البيانات باستخدام AES
             out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
-            out.println(AESUtils.encrypt(startTime));
-            out.println(AESUtils.encrypt(endTime));
+            out.println(AESUtils.encrypt(startTime.format(formatter)));  // تشفير الوقت بتنسيق النص
+            out.println(AESUtils.encrypt(endTime.format(formatter)));    // تشفير الوقت بتنسيق النص
 
             // استقبال الرسوم
             double fee = Double.parseDouble(in.readLine());
@@ -249,5 +257,13 @@ public class ParkingClient {
         }
         System.out.println(reservations.toString().trim());
         System.out.println("..............................................................");
+    }
+    private static LocalDateTime parseDateTime(String dateTimeInput, DateTimeFormatter formatter) {
+        try {
+            return LocalDateTime.parse(dateTimeInput, formatter);
+        } catch (DateTimeParseException e) {
+            System.err.println("Error: Invalid date/time format. Please use the format yyyy-MM-dd HH:mm");
+            return null; // إعادة القيمة null عند حدوث خطأ
+        }
     }
 }

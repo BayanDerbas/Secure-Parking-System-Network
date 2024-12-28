@@ -4,6 +4,9 @@ import Utils.RSAUtils;
 import java.io.*;
 import java.net.*;
 import java.sql.*;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -215,58 +218,6 @@ public class ParkingServer {
             // هنا يمكنك استخدام تاريخ الوقت الحالي بالصيغ المناسبة حسب قاعدة البيانات أو كما ترغب
             return java.time.LocalDateTime.now().toString(); // تعديل على الصيغة إذا لزم الأمر
         }
-        private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
-            String checkOverlap = """
-        SELECT COUNT(*) AS overlap_count
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        WHERE ps.spot_number = ?
-        AND (
-            (r.reserved_at <= ? AND r.reserved_until > ?) OR
-            (r.reserved_at < ? AND r.reserved_until >= ?) OR
-            (r.reserved_at >= ? AND r.reserved_until <= ?)
-        )
-    """;
-
-            String insertReservation = """
-        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
-        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
-    """;
-
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement checkStmt = conn.prepareStatement(checkOverlap);
-                 PreparedStatement insertStmt = conn.prepareStatement(insertReservation)) {
-
-                // إعداد استعلام التحقق من التداخل الزمني
-                checkStmt.setInt(1, spotNumber);
-                checkStmt.setString(2, endTime);
-                checkStmt.setString(3, startTime);
-                checkStmt.setString(4, startTime);
-                checkStmt.setString(5, endTime);
-                checkStmt.setString(6, startTime);
-                checkStmt.setString(7, endTime);
-
-                // تنفيذ استعلام التحقق
-                try (ResultSet rs = checkStmt.executeQuery()) {
-                    if (rs.next() && rs.getInt("overlap_count") > 0) {
-                        System.err.println("Error: The spot is already reserved during the specified time.");
-                        return false; // يوجد تداخل زمني
-                    }
-                }
-
-                // إدخال الحجز الجديد
-                insertStmt.setInt(1, spotNumber);
-                insertStmt.setInt(2, getCurrentUserId());
-                insertStmt.setString(3, startTime);
-                insertStmt.setString(4, endTime);
-                double fee = 10.0;
-                insertStmt.setDouble(5, fee);
-                return insertStmt.executeUpdate() > 0;
-            } catch (SQLException e) {
-                System.err.println("Error reserving parking spot: " + e.getMessage());
-            }
-            return false;
-        }
         private int getCurrentUserId() {
             String sql = "SELECT id FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -318,124 +269,6 @@ public class ParkingServer {
                 out.println(AESUtils.encrypt("No reservations found.")); // تشفير الرسالة
             }
             out.println(AESUtils.encrypt("END_OF_RESERVATIONS")); // إشارة النهاية
-        }
-        private void handleReserveSpot() throws Exception {
-            String availableSpots = getAvailableParkingSpots();
-            out.println(availableSpots);
-            out.println("END_OF_SPOTS");
-
-            if (availableSpots.equals("No parking spots available.")) {
-                return;
-            }
-
-            try {
-                String encryptedSpotNumber = in.readLine();
-                String encryptedStartTime = in.readLine();
-                String encryptedEndTime = in.readLine();
-
-                int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
-                String startTime = AESUtils.decrypt(encryptedStartTime);
-                String endTime = AESUtils.decrypt(encryptedEndTime);
-
-                double fee = 10.0;
-                out.println(fee);
-
-                String encryptedPayment = in.readLine();
-                String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
-                String paymentConfirmation = RSAUtils.decrypt(encryptedPayment, RSAUtils.loadPrivateKey(privateKeyPath));
-
-                if (!paymentConfirmation.equals("confirm_payment")) {
-                    out.println(AESUtils.encrypt("Error: Payment not confirmed."));
-                    return;
-                }
-
-                if (!deductUserBalance(fee)) {
-                    out.println(AESUtils.encrypt("Error: Insufficient balance."));
-                    return;
-                }
-
-                if (reserveParkingSpot(spotNumber, startTime, endTime)) {
-                    out.println(AESUtils.encrypt("Reservation successful!"));
-                } else {
-                    out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
-                }
-            } catch (Exception e) {
-                System.err.println("Error during reservation: " + e.getMessage());
-                out.println(AESUtils.encrypt("An error occurred during reservation. Please try again."));
-            }
-        }
-        private void handleCancelReservation() throws Exception {
-            StringBuilder reservations = new StringBuilder();
-            String sqlFetch = """
-        SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        WHERE r.user_id = ?
-    """;
-
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {
-
-                fetchStmt.setInt(1, getCurrentUserId());
-                ResultSet rs = fetchStmt.executeQuery();
-
-                int index = 1;
-                Map<Integer, Integer> reservationMap = new HashMap<>(); // خريطة لحفظ معرّفات الحجوزات
-
-                while (rs.next()) {
-                    int reservationId = rs.getInt("id");
-                    int spotNumber = rs.getInt("spot_number");
-                    String reservedAt = rs.getString("reserved_at");
-                    String reservedUntil = rs.getString("reserved_until");
-                    double fee = rs.getDouble("fee");
-
-                    reservationMap.put(index, reservationId); // تخزين معرّف الحجز
-
-                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: " + fee + ")";
-                    String encryptedData = AESUtils.encrypt(data);
-                    reservations.append(encryptedData).append("\n");
-                    index++;
-                }
-
-                if (reservations.length() > 0) {
-                    out.println(reservations.toString().trim());
-                } else {
-                    out.println(AESUtils.encrypt("No reservations found."));
-                }
-                out.println(AESUtils.encrypt("END_OF_RESERVATIONS"));
-
-                if (reservationMap.isEmpty()) return;
-
-                // استقبال الرقم
-                String encryptedNumber = in.readLine();
-                int reservationNumber = Integer.parseInt(AESUtils.decrypt(encryptedNumber));
-
-                if (!reservationMap.containsKey(reservationNumber)) {
-                    out.println(AESUtils.encrypt("Invalid reservation number."));
-                    return;
-                }
-
-                int reservationId = reservationMap.get(reservationNumber);
-                double refundAmount = calculateRefund(reservationId);
-
-                if (refundAmount > 0) {
-                    // تشفير مبلغ الاسترجاع باستخدام RSA
-                    String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem";
-                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), RSAUtils.loadPublicKey(publicKeyPath));
-                    out.println(encryptedRefund);
-
-                    if (cancelReservation(reservationId, refundAmount)) {
-                        out.println(AESUtils.encrypt("Reservation canceled successfully, and the refund was processed."));
-                    } else {
-                        out.println(AESUtils.encrypt("Failed to cancel the reservation."));
-                    }
-                } else {
-                    out.println(AESUtils.encrypt("No refund applicable for this reservation."));
-                }
-            } catch (Exception e) {
-                System.err.println("Error handling cancellation: " + e.getMessage());
-                out.println(AESUtils.encrypt("An error occurred. Please try again."));
-            }
         }
         private boolean cancelReservation(int reservationId, double refundAmount) {
             String sqlDelete = "DELETE FROM reservations WHERE id = ?";
@@ -494,13 +327,200 @@ public class ParkingServer {
 
                 pstmt.setDouble(1, amount);           // خصم المبلغ المطلوب
                 pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
-                pstmt.setDouble(3, amount);          // التأكد من وجود رصيد كافٍ
+                pstmt.setDouble(3, amount);           // التأكد من وجود رصيد كافٍ
 
-                return pstmt.executeUpdate() > 0; // التحقق من نجاح الخصم
+                return pstmt.executeUpdate() > 0;     // التحقق من نجاح الخصم
             } catch (SQLException e) {
                 System.err.println("Error deducting user balance: " + e.getMessage());
                 return false; // في حالة حدوث خطأ أو عدم كفاية الرصيد
             }
         }
+        private void handleReserveSpot() throws Exception {
+            String availableSpots = getAvailableParkingSpots();
+            out.println(availableSpots);
+            out.println("END_OF_SPOTS");
+
+            if (availableSpots.equals("No parking spots available.")) {
+                return;
+            }
+
+            try {
+                String encryptedSpotNumber = in.readLine();
+                String encryptedStartTime = in.readLine();
+                String encryptedEndTime = in.readLine();
+
+                int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
+                String startTime = AESUtils.decrypt(encryptedStartTime);
+                String endTime = AESUtils.decrypt(encryptedEndTime);
+
+                // حساب الرسوم
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+                LocalDateTime start = LocalDateTime.parse(startTime, formatter);
+                LocalDateTime end = LocalDateTime.parse(endTime, formatter);
+                double fee = calculateFee(start, end);
+
+                out.println(fee); // إرسال الرسوم للعميل
+
+                String encryptedPayment = in.readLine();
+                String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
+                String paymentConfirmation = RSAUtils.decrypt(encryptedPayment, RSAUtils.loadPrivateKey(privateKeyPath));
+
+                if (!paymentConfirmation.equals("confirm_payment")) {
+                    out.println(AESUtils.encrypt("Error: Payment not confirmed."));
+                    return;
+                }
+
+                if (!deductUserBalance(fee)) {
+                    out.println(AESUtils.encrypt("Error: Insufficient balance."));
+                    return;
+                }
+
+                if (reserveParkingSpot(spotNumber, startTime, endTime)) {
+                    out.println(AESUtils.encrypt("Reservation successful!"));
+                } else {
+                    out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
+                }
+            } catch (Exception e) {
+                System.err.println("Error during reservation: " + e.getMessage());
+                out.println(AESUtils.encrypt("An error occurred during reservation. Please try again."));
+            }
+        }
+        private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
+            String checkOverlap = """
+        SELECT COUNT(*) AS overlap_count
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE ps.spot_number = ?
+        AND (
+            (r.reserved_at <= ? AND r.reserved_until > ?) OR
+            (r.reserved_at < ? AND r.reserved_until >= ?) OR
+            (r.reserved_at >= ? AND r.reserved_until <= ?)
+        )
+    """;
+
+            String insertReservation = """
+        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
+        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
+    """;
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement checkStmt = conn.prepareStatement(checkOverlap);
+                 PreparedStatement insertStmt = conn.prepareStatement(insertReservation)) {
+
+                checkStmt.setInt(1, spotNumber);
+                checkStmt.setString(2, endTime);
+                checkStmt.setString(3, startTime);
+                checkStmt.setString(4, startTime);
+                checkStmt.setString(5, endTime);
+                checkStmt.setString(6, startTime);
+                checkStmt.setString(7, endTime);
+
+                try (ResultSet rs = checkStmt.executeQuery()) {
+                    if (rs.next() && rs.getInt("overlap_count") > 0) {
+                        System.err.println("Error: The spot is already reserved during the specified time.");
+                        return false;
+                    }
+                }
+
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+                LocalDateTime start = LocalDateTime.parse(startTime, formatter);
+                LocalDateTime end = LocalDateTime.parse(endTime, formatter);
+
+                double fee = calculateFee(start, end);
+
+                insertStmt.setInt(1, spotNumber);
+                insertStmt.setInt(2, getCurrentUserId());
+                insertStmt.setString(3, startTime);
+                insertStmt.setString(4, endTime);
+                insertStmt.setDouble(5, fee);
+
+                return insertStmt.executeUpdate() > 0;
+            } catch (SQLException e) {
+                System.err.println("Error reserving parking spot: " + e.getMessage());
+            }
+            return false;
+        }
+        private double calculateFee(LocalDateTime start, LocalDateTime end) {
+            Duration duration = Duration.between(start, end);
+            long durationHours = duration.toHours();
+
+            if (duration.toMinutes() % 60 != 0) {
+                durationHours++;
+            }
+
+            return durationHours * 10.0; // الرسوم 10 وحدات لكل ساعة
+        }
+        private void handleCancelReservation() throws Exception {
+            StringBuilder reservations = new StringBuilder();
+            String sqlFetch = """
+        SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
+    """;
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {
+
+                fetchStmt.setInt(1, getCurrentUserId());
+                ResultSet rs = fetchStmt.executeQuery();
+
+                int index = 1;
+                Map<Integer, Integer> reservationMap = new HashMap<>();
+
+                while (rs.next()) {
+                    int reservationId = rs.getInt("id");
+                    int spotNumber = rs.getInt("spot_number");
+                    String reservedAt = rs.getString("reserved_at");
+                    String reservedUntil = rs.getString("reserved_until");
+                    double fee = rs.getDouble("fee");
+
+                    reservationMap.put(index, reservationId);
+
+                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: " + fee + ")";
+                    String encryptedData = AESUtils.encrypt(data);
+                    reservations.append(encryptedData).append("\n");
+                    index++;
+                }
+
+                if (reservations.length() > 0) {
+                    out.println(reservations.toString().trim());
+                } else {
+                    out.println(AESUtils.encrypt("No reservations found."));
+                }
+                out.println(AESUtils.encrypt("END_OF_RESERVATIONS"));
+
+                if (reservationMap.isEmpty()) return;
+
+                String encryptedNumber = in.readLine();
+                int reservationNumber = Integer.parseInt(AESUtils.decrypt(encryptedNumber));
+
+                if (!reservationMap.containsKey(reservationNumber)) {
+                    out.println(AESUtils.encrypt("Invalid reservation number."));
+                    return;
+                }
+
+                int reservationId = reservationMap.get(reservationNumber);
+                double refundAmount = calculateRefund(reservationId);
+
+                if (refundAmount > 0) {
+                    String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem";
+                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), RSAUtils.loadPublicKey(publicKeyPath));
+                    out.println(encryptedRefund);
+
+                    if (cancelReservation(reservationId, refundAmount)) {
+                        out.println(AESUtils.encrypt("Reservation canceled successfully, and the refund was processed."));
+                    } else {
+                        out.println(AESUtils.encrypt("Failed to cancel the reservation."));
+                    }
+                } else {
+                    out.println(AESUtils.encrypt("No refund applicable for this reservation."));
+                }
+            } catch (Exception e) {
+                System.err.println("Error handling cancellation: " + e.getMessage());
+                out.println(AESUtils.encrypt("An error occurred. Please try again."));
+            }
+        }
+
     }
 }
