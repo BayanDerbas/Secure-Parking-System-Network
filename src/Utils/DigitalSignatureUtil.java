@@ -11,7 +11,6 @@ public class DigitalSignatureUtil {
         System.out.println("Generating RSA key pair...");
         return keyPairGenerator.generateKeyPair();
     }
-
     // توليد التوقيع الرقمي باستخدام المفتاح الخاص
     public static String generateDigitalSignature(String data, PrivateKey privateKey) throws Exception {
         String algorithm = "SHA256withRSA";
@@ -28,7 +27,6 @@ public class DigitalSignatureUtil {
         System.out.println("Generated digital signature (Base64 encoded): " + encodedSignature);
         return encodedSignature;  // إرجاع التوقيع في شكل مشفر
     }
-
     // التحقق من صحة التوقيع باستخدام المفتاح العام
     public static boolean verifyDigitalSignature(String data, String signatureStr, PublicKey publicKey) throws Exception {
         String algorithm = "SHA256withRSA";
@@ -46,7 +44,6 @@ public class DigitalSignatureUtil {
         System.out.println("Signature verification result: " + isVerified);
         return isVerified;
     }
-
     // مثال على استخدام الفئات
     public static void main(String[] args) {
         try {

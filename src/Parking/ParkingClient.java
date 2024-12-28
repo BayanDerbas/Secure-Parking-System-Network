@@ -157,18 +157,18 @@ public class ParkingClient {
             String endTimeInput = scanner.nextLine();
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
-            // تشفير البيانات
+            // Encrypt data
             out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
             out.println(AESUtils.encrypt(startTime.format(formatter)));
             out.println(AESUtils.encrypt(endTime.format(formatter)));
 
-            // توقيع الحجز
+            // Sign reservation
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-            String dataToSign = spotNumber + "|" + startTime.format(formatter) + "|" + endTime.format(formatter); // استخدام "|" كفاصل
+            String dataToSign = "Spot_num : " +spotNumber + "Date from : " + startTime.format(formatter) + "Date until : " + endTime.format(formatter); // using "|" as separator
             String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
 
-            // استقبال الرسوم
+            // Receive fee
             String encryptedFee = in.readLine();
             String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
             double fee = Double.parseDouble(decryptedFee);
@@ -182,12 +182,12 @@ public class ParkingClient {
                 return;
             }
 
-            // توقيع الدفع
+            // Payment signature
             String paymentConfirmation = "confirm_payment";
             String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
             out.println(paymentSignature);
 
-            // استقبال استجابة الخادم
+            // Receive server response
             String response = AESUtils.decrypt(in.readLine());
             System.out.println(response);
         } catch (Exception e) {
@@ -225,12 +225,12 @@ public class ParkingClient {
 
             // توقيع الرقم المراد إلغاؤه
             String signedData = DigitalSignatureUtil.generateDigitalSignature(String.valueOf(reservationNumber), privateKey);
+            System.out.println("Generated signature for cancellation request: " + signedData);
             out.println(signedData); // إرسال التوقيع للخادم
 
             // استقبال رد الخادم حول الاسترجاع
             String encryptedRefund = in.readLine();
-            String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem";
-            String refundAmount = RSAUtils.decrypt(encryptedRefund, RSAUtils.loadPrivateKey(privateKeyPath));
+            String refundAmount = RSAUtils.decrypt(encryptedRefund, RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem"));
             System.out.println("Refund Amount: " + refundAmount);
 
             // استقبال الرسالة النهائية من الخادم
