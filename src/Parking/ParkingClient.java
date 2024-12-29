@@ -160,24 +160,24 @@ public class ParkingClient {
             String endTimeInput = scanner.nextLine();
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
-            // تشفير البيانات المرسلة
+            // تشفير البيانات المرسلة باستخدام AES
             out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
             out.println(AESUtils.encrypt(startTime.format(formatter)));
             out.println(AESUtils.encrypt(endTime.format(formatter)));
 
-            // إنشاء التوقيع الرقمي وإرساله
+            // إنشاء التوقيع الرقمي وإرساله باستخدام RSA
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
             String dataToSign = spotNumber + "|" + startTime.format(formatter) + "|" + endTime.format(formatter);
             String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
 
-            // استقبال الرسوم من الخادم
+            // استقبال الرسوم المشفرة من الخادم (بـ RSA)
             String encryptedFee = in.readLine();
-            String decryptedFee = AESUtils.decrypt(encryptedFee);
+            String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
             double fee = Double.parseDouble(decryptedFee);
             System.out.println("The reservation fee is: " + fee);
 
-            // تأكيد الدفع
+            // تأكيد الدفع باستخدام RSA
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
             String confirmation = scanner.nextLine().trim().toLowerCase();
             if (confirmation.equals("no")) {
@@ -186,7 +186,7 @@ public class ParkingClient {
                 return;
             }
 
-            // إرسال توقيع تأكيد الدفع
+            // إرسال توقيع تأكيد الدفع باستخدام RSA
             String paymentConfirmation = "confirm_payment";
             String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
             out.println(paymentSignature);

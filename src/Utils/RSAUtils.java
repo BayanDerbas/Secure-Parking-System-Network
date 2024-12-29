@@ -1,5 +1,5 @@
 package Utils;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.jce.provider.*;
 import javax.crypto.Cipher;
 import java.io.FileReader;
 import java.nio.file.Files;

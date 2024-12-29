@@ -351,17 +351,17 @@ public class ParkingServer {
             }
 
             try {
-                // استقبال البيانات المشفرة من العميل
+                // استقبال البيانات المشفرة من العميل باستخدام AES
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
 
-                // فك تشفير البيانات
+                // فك تشفير البيانات باستخدام AES
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
 
-                // التحقق من صحة التوقيع الرقمي لبيانات الحجز
+                // التحقق من صحة التوقيع الرقمي باستخدام RSA
                 String dataToSign = spotNumber + "|" + startTime + "|" + endTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
@@ -376,26 +376,28 @@ public class ParkingServer {
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
                 double fee = calculateFee(start, end);
 
-                // إرسال الرسوم المشفرة إلى العميل
-                String encryptedFee = AESUtils.encrypt(String.valueOf(fee));
+                // إرسال الرسوم المشفرة إلى العميل باستخدام RSA
+                String encryptedFee = RSAUtils.encrypt(String.valueOf(fee), publicKey);
                 out.println(encryptedFee);
 
-                // التحقق من توقيع تأكيد الدفع
+                // التحقق من توقيع تأكيد الدفع باستخدام RSA
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
                 if (!DigitalSignatureUtil.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid payment confirmation."));
                     return;
                 }
-
                 // التحقق من الرصيد وحجز الموقف
                 if (!deductUserBalance(fee)) {
                     out.println(AESUtils.encrypt("Error: Insufficient balance."));
                     return;
                 }
 
+
                 if (reserveParkingSpot(spotNumber, startTime, endTime)) {
-                    out.println(AESUtils.encrypt("Reservation successful!"));
+                    // إرسال رسالة حجز ناجحة مشفرة باستخدام AES
+                    String successMessage = "Reservation successful!";
+                    out.println(AESUtils.encrypt(successMessage));
                 } else {
                     out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
                 }
