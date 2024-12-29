@@ -192,8 +192,18 @@ public class ParkingClient {
             out.println(paymentSignature);
 
             // استقبال الرد النهائي من الخادم
-            String response = AESUtils.decrypt(in.readLine());
-            System.out.println(response);
+            String encryptedResponse = in.readLine();
+            String decryptedResponse = RSAUtils.decrypt(encryptedResponse, privateKey);
+            System.out.println(decryptedResponse);
+
+            if (decryptedResponse.equals("Payment successful!")) {
+                // استقبال رسالة الحجز من الخادم (مشفره بـ AES)
+                String encryptedReservationMessage = in.readLine();
+                String decryptedReservationMessage = AESUtils.decrypt(encryptedReservationMessage);
+                System.out.println(decryptedReservationMessage); // عرض رسالة الحجز الناجحة أو الخطأ
+            } else {
+                System.out.println("Payment failed.");
+            }
         } catch (Exception e) {
             System.err.println("Error during reservation: " + e.getMessage());
         }
