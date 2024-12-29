@@ -60,4 +60,30 @@ public class RSAUtils {
             return keyFactory.generatePublic(new X509EncodedKeySpec(content));
         }
     }
+    public static void main(String[] args) {
+        try {
+            // مسار الملفات التي تحتوي على المفاتيح
+            String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem"; // استبدل بالمسار الفعلي
+            String privateKeyPath = "C:/Users/ahmad/Documents/private_key.pem"; // استبدل بالمسار الفعلي
+
+            // تحميل المفتاح العام والخاص
+            PublicKey publicKey = RSAUtils.loadPublicKey(publicKeyPath);
+            PrivateKey privateKey = RSAUtils.loadPrivateKey(privateKeyPath);
+
+            // النص الذي سيتم تشفيره
+            String plainText = "Hello, RSA Encryption!";
+
+            // التشفير
+            String encryptedText = RSAUtils.encrypt(plainText, publicKey);
+
+            // فك التشفير
+            String decryptedText = RSAUtils.decrypt(encryptedText, privateKey);
+
+            // التحقق من صحة النتائج
+            System.out.println("\nOriginal Text: " + plainText);
+            System.out.println("Decrypted Text: " + decryptedText);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 }

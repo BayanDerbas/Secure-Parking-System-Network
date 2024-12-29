@@ -4,6 +4,7 @@ import Utils.DigitalSignatureUtil;
 import Utils.RSAUtils;
 import java.io.*;
 import java.net.*;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.sql.*;
 import java.time.Duration;
@@ -340,6 +341,7 @@ public class ParkingServer {
             }
         }
         private void handleReserveSpot() throws Exception {
+            // عرض المواقف المتاحة
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots);
             out.println("END_OF_SPOTS");
@@ -349,44 +351,44 @@ public class ParkingServer {
             }
 
             try {
-                // Receive encrypted spot number, start time, and end time
+                // استقبال البيانات المشفرة من العميل
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
+
+                // فك تشفير البيانات
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
 
-                // Verify reservation signature
-                String dataToSign = spotNumber + "|" + startTime + "|" + endTime; // using "|" as separator
+                // التحقق من صحة التوقيع الرقمي لبيانات الحجز
+                String dataToSign = spotNumber + "|" + startTime + "|" + endTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
-                boolean isReservationSignatureValid = DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey);
-                if (!isReservationSignatureValid) {
+                if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
                 }
 
-                // Calculate the fee
+                // احتساب الرسوم بناءً على وقت الحجز
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
                 double fee = calculateFee(start, end);
-                String feeText = String.valueOf(fee);
 
-                // Encrypt and send fee
-                String encryptedFee = RSAUtils.encrypt(feeText, publicKey);
+                // إرسال الرسوم المشفرة إلى العميل
+                String encryptedFee = AESUtils.encrypt(String.valueOf(fee));
                 out.println(encryptedFee);
 
-                // Receive payment signature
+                // التحقق من توقيع تأكيد الدفع
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
-                boolean isPaymentSignatureValid = DigitalSignatureUtil.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey);
-                if (!isPaymentSignatureValid) {
+                if (!DigitalSignatureUtil.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid payment confirmation."));
                     return;
                 }
 
+                // التحقق من الرصيد وحجز الموقف
                 if (!deductUserBalance(fee)) {
                     out.println(AESUtils.encrypt("Error: Insufficient balance."));
                     return;
@@ -470,11 +472,11 @@ public class ParkingServer {
         private void handleCancelReservation() throws Exception {
             StringBuilder reservations = new StringBuilder();
             String sqlFetch = """
-    SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-    FROM reservations r
-    JOIN parking_spots ps ON r.parking_spot_id = ps.id
-    WHERE r.user_id = ?
-    """;
+               SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+               FROM reservations r
+               JOIN parking_spots ps ON r.parking_spot_id = ps.id
+               WHERE r.user_id = ?
+                              """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {
@@ -514,18 +516,14 @@ public class ParkingServer {
 
                 // استلام توقيع الرقم
                 String receivedSignature = in.readLine();
-                System.out.println("Received signature from client: " + receivedSignature);
 
-                String publicKeyPath = "C:/Users/ahmad/Documents/public_key.pem";
-                PublicKey publicKey = RSAUtils.loadPublicKey(publicKeyPath);
+                PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
 
                 // التحقق من التوقيع
                 if (!DigitalSignatureUtil.verifyDigitalSignature(String.valueOf(reservationNumber), receivedSignature, publicKey)) {
-                    System.err.println("Error: Invalid signature. Reservation number: " + reservationNumber);
                     out.println(AESUtils.encrypt("Error: Invalid signature."));
                     return;
                 }
-                System.out.println("Signature verification succeeded for reservation number: " + reservationNumber);
 
                 if (!reservationMap.containsKey(reservationNumber)) {
                     out.println(AESUtils.encrypt("Invalid reservation number."));
@@ -536,14 +534,19 @@ public class ParkingServer {
                 double refundAmount = calculateRefund(reservationId);
 
                 if (refundAmount > 0) {
-                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), publicKey);
+                    // تحميل المفتاح العام للعميل لتشفير مبلغ الاسترداد
+                    PublicKey clientPublicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
+                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), clientPublicKey); // التشفير بالمفتاح العام
                     out.println(encryptedRefund);
 
-                    // إلغاء الحجز إذا كان المبلغ المسترد موجودًا
+                    // توقيع مبلغ الاسترداد بالمفتاح الخاص للخادم
+                    PrivateKey serverPrivateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
+                    String refundSignature = DigitalSignatureUtil.generateDigitalSignature(String.valueOf(refundAmount), serverPrivateKey);
+                    out.println(refundSignature);
+
+                    // إلغاء الحجز
                     if (cancelReservation(reservationId, refundAmount)) {
-                        String refundMessage = "Reservation canceled successfully, and the refund was processed.\n";
-                        String signedRefundMessage = DigitalSignatureUtil.generateDigitalSignature(refundMessage, RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem"));
-                        out.println(AESUtils.encrypt(refundMessage + " Signature: " + signedRefundMessage));
+                        out.println(AESUtils.encrypt("Reservation canceled successfully, and the refund was processed."));
                     } else {
                         out.println(AESUtils.encrypt("Failed to cancel the reservation."));
                     }
