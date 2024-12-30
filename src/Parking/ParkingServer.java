@@ -1,38 +1,40 @@
 package Parking;
-import Utils.AESUtils;
-import Utils.DigitalSignatureUtil;
-import Utils.RSAUtils;
+import Utils.*;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocket;
 import java.io.*;
 import java.net.*;
-import java.security.PrivateKey;
-import java.security.PublicKey;
+import java.security.*;
 import java.sql.*;
-import java.time.Duration;
-import java.time.LocalDateTime;
+import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
-
-import static org.bouncycastle.asn1.x509.ObjectDigestInfo.publicKey;
+import java.util.*;
 
 public class ParkingServer {
     private static final int PORT = 3000;
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
 
     public static void main(String[] args) {
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+        try {
+            SSLContext sslContext = DigitalCertificateUtils.loadCertificate("C:\\Users\\ahmad\\Documents\\keystore.jks", "password", "password");
+            SSLServerSocketFactory factory = sslContext.getServerSocketFactory();
+            SSLServerSocket serverSocket = (SSLServerSocket) factory.createServerSocket(PORT);
+
             System.out.println("Server is listening on port " + PORT);
 
             while (true) {
-                Socket clientSocket = serverSocket.accept();
+                SSLSocket clientSocket = (SSLSocket) serverSocket.accept();
                 System.out.println("A client has connected from " + clientSocket.getInetAddress());
                 new Thread(new ClientHandler(clientSocket)).start();
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             System.err.println("Server exception: " + e.getMessage());
         }
     }
-    private static class ClientHandler implements Runnable {
+        private static class ClientHandler implements Runnable {
         private Socket clientSocket;
         private PrintWriter out;
         private BufferedReader in;
@@ -138,29 +140,34 @@ public class ParkingServer {
             }
         }
         private void handleLogin() throws IOException {
-            String fullName = in.readLine();
-            String encryptedPassword = in.readLine();
+                System.out.println("Handling login...");
+                String fullName = in.readLine();
+                System.out.println("Received full name: " + fullName);
 
-            System.out.println("Received encrypted password: " + encryptedPassword); // Debugging
+                String encryptedPassword = in.readLine();
+                System.out.println("Received encrypted password: " + encryptedPassword);
 
-            // فك تشفير كلمة المرور قبل إرسالها للمقارنة
-            String rawPassword;
-            try {
-                rawPassword = AESUtils.decrypt(encryptedPassword);
-            } catch (Exception e) {
-                System.err.println("Error decrypting password: " + e.getMessage());
-                out.println("Login failed!"); // إرسال خطأ للعميل
-                return;
+                // فك تشفير كلمة المرور
+                String rawPassword;
+                try {
+                    rawPassword = AESUtils.decrypt(encryptedPassword);
+                    System.out.println("Decrypted password: " + rawPassword);
+                } catch (Exception e) {
+                    System.err.println("Error decrypting password: " + e.getMessage());
+                    out.println("Login failed!");
+                    return;
+                }
+
+                boolean isLoggedIn = loginUser(fullName, rawPassword);
+                if (isLoggedIn) {
+                    System.out.println("Login successful for user: " + fullName);
+                    currentUser = fullName; // تحديث المستخدم الحالي
+                    out.println("Login successful!");
+                } else {
+                    System.out.println("Login failed for user: " + fullName);
+                    out.println("Login failed!");
+                }
             }
-
-            boolean isLoggedIn = loginUser(fullName, rawPassword); // استخدم الكلمة الأصلية
-            out.println(isLoggedIn ? "Login successful!" : "Login failed!");
-
-            if (isLoggedIn) {
-                this.currentUser = fullName;
-                System.out.println("Current user: " + this.currentUser); // Debugging
-            }
-        }
         private boolean loginUser(String fullName, String rawPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);

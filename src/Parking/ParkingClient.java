@@ -1,7 +1,9 @@
 package Parking;
-import Utils.AESUtils;
-import Utils.DigitalSignatureUtil;
-import Utils.RSAUtils;
+import Utils.*;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 import java.io.*;
 import java.net.Socket;
 import java.security.PrivateKey;
@@ -14,13 +16,20 @@ import java.util.Scanner;
 public class ParkingClient {
     private static final String SERVER_HOST = "localhost"; // عنوان الخادم
     private static final int SERVER_PORT = 3000; // منفذ الخادم
-    public static void main(String[] args) {
-        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             Scanner scanner = new Scanner(System.in)) {
 
-            System.out.println("Connected to the server!");
+    public static void main(String[] args) {
+        try {
+            SSLContext sslContext = DigitalCertificateUtils.loadCertificate("C:\\Users\\ahmad\\Documents\\keystore.jks", "password", "password");
+            SSLSocketFactory factory = sslContext.getSocketFactory();
+            SSLSocket socket = (SSLSocket) factory.createSocket(SERVER_HOST, SERVER_PORT);
+
+            DigitalCertificateUtils.printServerCertificate(socket); // طباعة شهادة الخادم
+
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            Scanner scanner = new Scanner(System.in);
+
+            System.out.println("Connected to the server securely!");
 
             while (true) {
                 System.out.println("Welcome to Parking System!");
@@ -29,7 +38,7 @@ public class ParkingClient {
                 System.out.println("3. Exit");
                 System.out.print("Choose an option: ");
                 int choice = scanner.nextInt();
-                scanner.nextLine(); // استهلاك السطر المتبقي
+                scanner.nextLine(); // consume the newline character
 
                 switch (choice) {
                     case 1 -> handleRegister(out, in, scanner);
@@ -42,14 +51,12 @@ public class ParkingClient {
                 }
             }
 
-        } catch (IOException e) {
-            System.err.println("Error: " + e.getMessage());
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            System.err.println("Error: " + e.getMessage());
         }
     }
     private static void handleRegister(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
-        out.println("register"); // إرسال إشارة بدء التسجيل
+        out.println("register");
 
         System.out.print("Enter your full name: ");
         out.println(scanner.nextLine());
@@ -64,12 +71,10 @@ public class ParkingClient {
         out.println(scanner.nextLine());
 
         System.out.print("Enter your password: ");
+        String rawPassword = scanner.nextLine();
         try {
-            String rawPassword = scanner.nextLine();
-            System.out.println("Password before encryption: " + rawPassword); // Debugging
-            String encryptedPassword = AESUtils.encrypt(rawPassword); // تشفير كلمة المرور
-            System.out.println("Encrypted password: " + encryptedPassword); // Debugging
-            out.println(encryptedPassword); // إرسال كلمة المرور المشفرة
+            String encryptedPassword = AESUtils.encrypt(rawPassword);
+            out.println(encryptedPassword);
         } catch (Exception e) {
             System.err.println("Error encrypting password: " + e.getMessage());
             return;
@@ -77,30 +82,35 @@ public class ParkingClient {
 
         System.out.print("Enter your wallet balance: ");
         double walletBalance = scanner.nextDouble();
-        scanner.nextLine(); // استهلاك السطر المتبقي
-        out.println(walletBalance); // إرسال الرصيد
+        scanner.nextLine(); // consume the newline character
+        out.println(walletBalance);
 
-        System.out.println("Server response: " + in.readLine()); // عرض استجابة الخادم
+        System.out.println("Server response: " + in.readLine());
         System.out.println("Returning to main menu...");
     }
     private static void handleLogin(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
+        System.out.println("Sending login request to the server...");
         out.println("login");
-        System.out.print("Enter your full name: ");
-        out.println(scanner.nextLine());
-        System.out.print("Enter your password: ");
-        try {
-            String encryptedPassword = AESUtils.encrypt(scanner.nextLine());
-            out.println(encryptedPassword);
-        } catch (Exception e) {
-            System.err.println("Error encrypting password: " + e.getMessage());
-            return;
-        }
 
+        System.out.print("Enter your full name: ");
+        String fullName = scanner.nextLine();
+        out.println(fullName);
+        System.out.println("Sent full name: " + fullName);
+
+        System.out.print("Enter your password: ");
+        String rawPassword = scanner.nextLine();
+        String encryptedPassword = AESUtils.encrypt(rawPassword);
+        out.println(encryptedPassword);
+        System.out.println("Sent encrypted password.");
+
+        System.out.println("Waiting for server response...");
         String serverResponse = in.readLine();
         System.out.println("Server response: " + serverResponse);
 
-        if (serverResponse.equals("Login successful!")) {
+        if ("Login successful!".equals(serverResponse)) {
             userMenu(out, in, scanner);
+        } else {
+            System.out.println("Login failed!");
         }
     }
     private static void userMenu(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
