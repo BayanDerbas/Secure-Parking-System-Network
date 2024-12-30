@@ -1,16 +1,10 @@
 package Parking;
 import Utils.*;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.*;
 import java.io.*;
-import java.net.Socket;
-import java.security.PrivateKey;
-import java.security.PublicKey;
+import java.security.*;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.time.format.*;
 import java.util.Scanner;
 
 public class ParkingClient {

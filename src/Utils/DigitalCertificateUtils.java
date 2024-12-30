@@ -2,8 +2,7 @@ package Utils;
 import javax.net.ssl.*;
 import java.io.FileInputStream;
 import java.security.*;
-import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
+import java.security.cert.*;
 
 public class DigitalCertificateUtils {
     static {
