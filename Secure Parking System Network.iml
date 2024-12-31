@@ -9,7 +9,7 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" exported="" name="jbcrypt-0.4" level="project" />
     <orderEntry type="library" exported="" name="sqlite-jdbc-3.42.0.0" level="project" />
-    <orderEntry type="library" exported="" name="bcprov-jdk15on-1.68" level="project" />
-    <orderEntry type="library" exported="" name="bcpkix-jdk15on-1.68" level="project" />
+    <orderEntry type="library" name="bcpkix-jdk15on-1.68" level="project" />
+    <orderEntry type="library" name="bcprov-jdk15on-1.68" level="project" />
   </component>
 </module>

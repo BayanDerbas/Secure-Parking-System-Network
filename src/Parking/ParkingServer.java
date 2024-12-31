@@ -14,27 +14,25 @@ public class ParkingServer {
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
 
     public static void main(String[] args) {
-        try {
-            SSLContext sslContext = DigitalCertificateUtils.loadCertificate("C:\\Users\\ahmad\\Documents\\keystore.jks", "password", "password");
-            SSLServerSocketFactory factory = sslContext.getServerSocketFactory();
-            SSLServerSocket serverSocket = (SSLServerSocket) factory.createServerSocket(PORT);
-
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             System.out.println("Server is listening on port " + PORT);
 
             while (true) {
-                SSLSocket clientSocket = (SSLSocket) serverSocket.accept();
+                Socket clientSocket = serverSocket.accept();
                 System.out.println("A client has connected from " + clientSocket.getInetAddress());
                 new Thread(new ClientHandler(clientSocket)).start();
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("Server exception: " + e.getMessage());
         }
     }
-        private static class ClientHandler implements Runnable {
+
+    private static class ClientHandler implements Runnable {
         private Socket clientSocket;
         private PrintWriter out;
         private BufferedReader in;
         private String currentUser; // المستخدم الحالي للجلسة
+
         public ClientHandler(Socket socket) {
             this.clientSocket = socket;
         }
@@ -136,34 +134,34 @@ public class ParkingServer {
             }
         }
         private void handleLogin() throws IOException {
-                System.out.println("Handling login...");
-                String fullName = in.readLine();
-                System.out.println("Received full name: " + fullName);
+            System.out.println("Handling login...");
+            String fullName = in.readLine();
+            System.out.println("Received full name: " + fullName);
 
-                String encryptedPassword = in.readLine();
-                System.out.println("Received encrypted password: " + encryptedPassword);
+            String encryptedPassword = in.readLine();
+            System.out.println("Received encrypted password: " + encryptedPassword);
 
-                // فك تشفير كلمة المرور
-                String rawPassword;
-                try {
-                    rawPassword = AESUtils.decrypt(encryptedPassword);
-                    System.out.println("Decrypted password: " + rawPassword);
-                } catch (Exception e) {
-                    System.err.println("Error decrypting password: " + e.getMessage());
-                    out.println("Login failed!");
-                    return;
-                }
-
-                boolean isLoggedIn = loginUser(fullName, rawPassword);
-                if (isLoggedIn) {
-                    System.out.println("Login successful for user: " + fullName);
-                    currentUser = fullName; // تحديث المستخدم الحالي
-                    out.println("Login successful!");
-                } else {
-                    System.out.println("Login failed for user: " + fullName);
-                    out.println("Login failed!");
-                }
+            // فك تشفير كلمة المرور
+            String rawPassword;
+            try {
+                rawPassword = AESUtils.decrypt(encryptedPassword);
+                System.out.println("Decrypted password: " + rawPassword);
+            } catch (Exception e) {
+                System.err.println("Error decrypting password: " + e.getMessage());
+                out.println("Login failed!");
+                return;
             }
+
+            boolean isLoggedIn = loginUser(fullName, rawPassword);
+            if (isLoggedIn) {
+                System.out.println("Login successful for user: " + fullName);
+                currentUser = fullName; // تحديث المستخدم الحالي
+                out.println("Login successful!");
+            } else {
+                System.out.println("Login failed for user: " + fullName);
+                out.println("Login failed!");
+            }
+        }
         private boolean loginUser(String fullName, String rawPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -197,12 +195,12 @@ public class ParkingServer {
         private String getAvailableParkingSpots() {
             StringBuilder spots = new StringBuilder();
             String sql = """
-        SELECT spot_number FROM parking_spots 
-        WHERE spot_number NOT IN (
-            SELECT parking_spot_id FROM reservations
-            WHERE (reserved_at <= ? AND reserved_until >= ?)
-        )
-    """;
+                        SELECT spot_number FROM parking_spots 
+                        WHERE spot_number NOT IN (
+                            SELECT parking_spot_id FROM reservations
+                            WHERE (reserved_at <= ? AND reserved_until >= ?)
+                        )
+                    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -243,11 +241,11 @@ public class ParkingServer {
         private void handleViewReservations() throws Exception {
             StringBuilder reservations = new StringBuilder();
             String sql = """
-        SELECT ps.spot_number, r.reserved_at, r.reserved_until
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        WHERE r.user_id = ?
-    """;
+                        SELECT ps.spot_number, r.reserved_at, r.reserved_until
+                        FROM reservations r
+                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                        WHERE r.user_id = ?
+                    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -406,21 +404,21 @@ public class ParkingServer {
         }
         private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
             String checkOverlap = """
-        SELECT COUNT(*) AS overlap_count
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        WHERE ps.spot_number = ?
-        AND (
-            (r.reserved_at <= ? AND r.reserved_until > ?) OR
-            (r.reserved_at < ? AND r.reserved_until >= ?) OR
-            (r.reserved_at >= ? AND r.reserved_until <= ?)
-        )
-    """;
+                        SELECT COUNT(*) AS overlap_count
+                        FROM reservations r
+                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                        WHERE ps.spot_number = ?
+                        AND (
+                            (r.reserved_at <= ? AND r.reserved_until > ?) OR
+                            (r.reserved_at < ? AND r.reserved_until >= ?) OR
+                            (r.reserved_at >= ? AND r.reserved_until <= ?)
+                        )
+                    """;
 
             String insertReservation = """
-        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
-        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
-    """;
+                        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
+                        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
+                    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement checkStmt = conn.prepareStatement(checkOverlap);
@@ -472,11 +470,11 @@ public class ParkingServer {
         private void handleCancelReservation() throws Exception {
             StringBuilder reservations = new StringBuilder();
             String sqlFetch = """
-               SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-               FROM reservations r
-               JOIN parking_spots ps ON r.parking_spot_id = ps.id
-               WHERE r.user_id = ?
-                              """;
+                    SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+                    FROM reservations r
+                    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                    WHERE r.user_id = ?
+                    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {

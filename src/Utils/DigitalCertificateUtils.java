@@ -1,92 +1,115 @@
 package Utils;
-import javax.net.ssl.*;
-import java.io.FileInputStream;
+import org.bouncycastle.asn1.x500.X500Name;
+import org.bouncycastle.asn1.x509.*;
+import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.X509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
+import org.bouncycastle.openssl.PEMWriter;
+import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.pkcs.*;
+import java.io.*;
 import java.security.*;
 import java.security.cert.*;
+import java.security.spec.*;
+import java.util.Date;
+import java.math.BigInteger;
 
 public class DigitalCertificateUtils {
-    static {
-        // إضافة مزود BouncyCastle
-        Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+    // توليد مفتاح خاص وعام
+    public static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+        keyPairGenerator.initialize(2048);  // تحديد طول المفتاح 2048 بت
+        return keyPairGenerator.generateKeyPair();
     }
-    // دالة لعرض تفاصيل الشهادة
-    public static void printCertificateDetails(String certificatePath) {
-        try {
-            CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-            X509Certificate certificate;
-            try (FileInputStream certFile = new FileInputStream(certificatePath)) {
-                certificate = (X509Certificate) certFactory.generateCertificate(certFile);
-            }
+    // توليد CSR باستخدام BouncyCastle
+    public static String generateCSR(KeyPair keyPair, String distinguishedName) throws Exception {
+        X500Name subject = new X500Name(distinguishedName);
 
-            System.out.println("Certificate Details:");
-            System.out.println("Subject: " + certificate.getSubjectDN());
-            System.out.println("Issuer: " + certificate.getIssuerDN());
-            System.out.println("Serial Number: " + certificate.getSerialNumber());
-            System.out.println("Valid From: " + certificate.getNotBefore());
-            System.out.println("Valid Until: " + certificate.getNotAfter());
-            System.out.println("Signature Algorithm: " + certificate.getSigAlgName());
-        } catch (Exception e) {
-            System.err.println("Error printing certificate details: " + e.getMessage());
+        // تحويل المفتاح العام إلى SubjectPublicKeyInfo
+        SubjectPublicKeyInfo subjectPublicKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic().getEncoded());
+
+        // إنشاء شهادة CSR
+        PKCS10CertificationRequestBuilder p10Builder = new PKCS10CertificationRequestBuilder(subject, subjectPublicKeyInfo);
+        ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withRSA").build(keyPair.getPrivate());
+        PKCS10CertificationRequest csr = p10Builder.build(contentSigner);
+
+        // تحويل CSR إلى صيغة PEM (نص مشفر)
+        StringWriter writer = new StringWriter();
+        PEMWriter pemWriter = new PEMWriter(writer);
+        pemWriter.writeObject(csr);
+        pemWriter.close();
+
+        return writer.toString();
+    }
+    // تحويل CSR PEM إلى بايتات
+    public static byte[] convertPEMToByteArray(String pem) {
+        // إزالة الترويسة والذيل
+        String cleanedPem = pem.replace("-----BEGIN CERTIFICATE REQUEST-----", "")
+                .replace("-----END CERTIFICATE REQUEST-----", "")
+                .replaceAll("\\s+", "");
+
+        return java.util.Base64.getDecoder().decode(cleanedPem);
+    }
+    // توقيع CSR بواسطة CA باستخدام BouncyCastle
+    public static X509Certificate signCSR(String csrPem, KeyPair caKeyPair, String caDistinguishedName) throws Exception {
+        X500Name issuerName = new X500Name(caDistinguishedName);
+
+        // تحويل CSR من PEM إلى byte array
+        byte[] csrBytes = convertPEMToByteArray(csrPem);
+
+        // تحميل CSR من bytes
+        PKCS10CertificationRequest csrRequest = new PKCS10CertificationRequest(csrBytes);
+
+        // استخراج المفتاح العام من CSR
+        SubjectPublicKeyInfo subjectPublicKeyInfo = csrRequest.getSubjectPublicKeyInfo();
+        PublicKey publicKey = KeyFactory.getInstance("RSA")
+                .generatePublic(new X509EncodedKeySpec(subjectPublicKeyInfo.getEncoded()));
+
+        // إنشاء شهادة جديدة
+        Date notBefore = new Date();
+        Date notAfter = new Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000);  // سنة واحدة من الآن
+        X500Name subject = csrRequest.getSubject();
+
+        // إنشاء رقم تسلسلي للشهادة
+        BigInteger serialNumber = BigInteger.valueOf(System.currentTimeMillis());
+
+        // إنشاء الشهادة باستخدام X509v3CertificateBuilder
+        X509v3CertificateBuilder certBuilder = new X509v3CertificateBuilder(
+                issuerName, serialNumber, notBefore, notAfter, subject, subjectPublicKeyInfo);
+
+        ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withRSA").build(caKeyPair.getPrivate());
+
+        // بناء الشهادة
+        X509CertificateHolder certificateHolder = certBuilder.build(contentSigner);
+
+        // تحويل إلى X509Certificate
+        return new JcaX509CertificateConverter().getCertificate(certificateHolder);
+    }
+    public static void saveCertificateToFile(X509Certificate certificate, String filePath) throws Exception {
+        // حفظ الشهادة في ملف بصيغة .cer أو .crt
+        try (FileOutputStream fos = new FileOutputStream(filePath)) {
+            fos.write(certificate.getEncoded());
         }
+        System.out.println("Certificate saved to: " + filePath);
     }
-    // دالة لعرض تفاصيل الشهادة الرقمية للاتصال الآمن (SSL)
-    public static void printServerCertificate(SSLSocket socket) {
-        try {
-            SSLSession session = socket.getSession();
-            X509Certificate[] serverCerts = (X509Certificate[]) session.getPeerCertificates();
-
-            if (serverCerts != null && serverCerts.length > 0) {
-                X509Certificate serverCert = serverCerts[0];
-                System.out.println("Server Certificate Information:");
-                System.out.println("Subject: " + serverCert.getSubjectDN());
-                System.out.println("Issuer: " + serverCert.getIssuerDN());
-                System.out.println("Serial Number: " + serverCert.getSerialNumber());
-                System.out.println("Valid From: " + serverCert.getNotBefore());
-                System.out.println("Valid Until: " + serverCert.getNotAfter());
-            } else {
-                System.out.println("No server certificate available.");
-            }
-        } catch (SSLPeerUnverifiedException e) {
-            System.err.println("Could not retrieve server certificate: " + e.getMessage());
-        }
-    }
-    // تحميل الشهادة من ملف keystore
-    public static SSLContext loadCertificate(String keyStorePath, String keyStorePassword, String keyPassword) throws Exception {
-        KeyStore keyStore = KeyStore.getInstance("JKS");
-        try (FileInputStream keyStoreFile = new FileInputStream(keyStorePath)) {
-            keyStore.load(keyStoreFile, keyStorePassword.toCharArray());
-        }
-
-        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keyManagerFactory.init(keyStore, keyPassword.toCharArray());
-
-        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        trustManagerFactory.init(keyStore);
-
-        SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
-
-        return sslContext;
-    }
-    public static void main(String[] args) {
-        try {
-            System.out.println("Printing Certificate Details...");
-            String certificatePath = "C:\\Users\\ahmad\\Documents\\certificate.crt"; // المسار إلى الشهادة
-            printCertificateDetails(certificatePath);
-
-            // مثال على استخدام SSLSocket لطباعة شهادة الخادم في حالة الاتصال الآمن
-            String serverHost = "localhost"; // عنوان الخادم
-            int serverPort = 3000; // منفذ الخادم
-
-            SSLContext sslContext = loadCertificate("C:\\Users\\ahmad\\Documents\\keystore.jks", "password", "password");
-            SSLSocketFactory factory = sslContext.getSocketFactory();
-            SSLSocket socket = (SSLSocket) factory.createSocket(serverHost, serverPort);
-
-            printServerCertificate(socket); // طباعة شهادة الخادم
-
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-        }
-    }
-}
-//   C:\Users\ahmad\Documents\keystore.jks
+    public static void main(String[] args) throws Exception {
+        // توليد مفتاح خاص وعام للـ CA
+        KeyPair caKeyPair = generateKeyPair();
+        // توليد مفتاح خاص وعام للمستخدم
+        KeyPair userKeyPair = generateKeyPair();
+        // فرضًا تم توليد CSR وتوقيعه بنجاح
+        String caDistinguishedName = "CN=MyTrustedCA, O=CAOrg, C=US";
+        String csr = generateCSR(userKeyPair, "CN=John Doe, O=MyCompany, C=US");
+        X509Certificate signedCertificate = signCSR(csr, caKeyPair, caDistinguishedName);
+        // حفظ الشهادة في ملف
+        saveCertificateToFile(signedCertificate, "C:\\Users\\ahmad\\Documents\\signedCertificate.cer");
+        saveCertificateToFile(signedCertificate, "C:\\Users\\ahmad\\Documents\\signedCertificate.crt");
+        // طباعة التفاصيل
+        System.out.println("Subject: " + signedCertificate.getSubjectDN());
+        System.out.println("Issuer: " + signedCertificate.getIssuerDN());
+        System.out.println("Valid From: " + signedCertificate.getNotBefore());
+        System.out.println("Valid Until: " + signedCertificate.getNotAfter());
+        System.out.println("Serial Number: " + signedCertificate.getSerialNumber());
+        System.out.println("Signature Algorithm: " + signedCertificate.getSigAlgName());
+    }}

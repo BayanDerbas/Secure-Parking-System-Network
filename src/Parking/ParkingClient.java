@@ -2,6 +2,7 @@ package Parking;
 import Utils.*;
 import javax.net.ssl.*;
 import java.io.*;
+import java.net.Socket;
 import java.security.*;
 import java.time.LocalDateTime;
 import java.time.format.*;
@@ -10,20 +11,13 @@ import java.util.Scanner;
 public class ParkingClient {
     private static final String SERVER_HOST = "localhost"; // عنوان الخادم
     private static final int SERVER_PORT = 3000; // منفذ الخادم
-
     public static void main(String[] args) {
-        try {
-            SSLContext sslContext = DigitalCertificateUtils.loadCertificate("C:\\Users\\ahmad\\Documents\\keystore.jks", "password", "password");
-            SSLSocketFactory factory = sslContext.getSocketFactory();
-            SSLSocket socket = (SSLSocket) factory.createSocket(SERVER_HOST, SERVER_PORT);
+        try (Socket socket = new Socket(SERVER_HOST, SERVER_PORT);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             Scanner scanner = new Scanner(System.in)) {
 
-            DigitalCertificateUtils.printServerCertificate(socket); // طباعة شهادة الخادم
-
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            Scanner scanner = new Scanner(System.in);
-
-            System.out.println("Connected to the server securely!");
+            System.out.println("Connected to the server!");
 
             while (true) {
                 System.out.println("Welcome to Parking System!");
@@ -32,7 +26,7 @@ public class ParkingClient {
                 System.out.println("3. Exit");
                 System.out.print("Choose an option: ");
                 int choice = scanner.nextInt();
-                scanner.nextLine(); // consume the newline character
+                scanner.nextLine(); // استهلاك السطر المتبقي
 
                 switch (choice) {
                     case 1 -> handleRegister(out, in, scanner);
@@ -45,8 +39,10 @@ public class ParkingClient {
                 }
             }
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("Error: " + e.getMessage());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
     private static void handleRegister(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {

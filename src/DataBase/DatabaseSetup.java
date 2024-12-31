@@ -6,10 +6,8 @@ public class DatabaseSetup {
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
-
         // التأكد من إنشاء الجداول قبل البدء في العمليات الأخرى
         createTables();
-
         while (true) {
             System.out.println("Select an option:");
             System.out.println("1. View all data");
@@ -20,7 +18,6 @@ public class DatabaseSetup {
 
             int choice = scanner.nextInt();
             scanner.nextLine();  // Consume newline
-
             switch (choice) {
                 case 1:
                     viewData();
