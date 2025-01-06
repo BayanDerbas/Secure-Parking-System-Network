@@ -1,4 +1,6 @@
 package DataBase;
+import Utils.AESUtils;
+
 import java.sql.*;
 import java.util.*;
 
@@ -140,23 +142,32 @@ public class DatabaseSetup {
 
                 // استعلام لعرض الحجوزات
                 String viewReservations = """
-                        SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until
-                        FROM reservations r
-                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                        JOIN users u ON r.user_id = u.id
-                        ORDER BY r.reserved_at;
-                        """;
+                    SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until
+                    FROM reservations r
+                    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                    JOIN users u ON r.user_id = u.id
+                    ORDER BY r.reserved_at;
+                    """;
+
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(viewReservations)) {
                     System.out.println("Reservations:");
                     while (rs.next()) {
                         int spotNumber = rs.getInt("spot_number");
                         String fullName = rs.getString("full_name");
-                        String reservedAt = rs.getString("reserved_at");
-                        String reservedUntil = rs.getString("reserved_until");
+
+                        // فك تشفير وقت الحجز
+                        String encryptedReservedAt = rs.getString("reserved_at");
+                        String encryptedReservedUntil = rs.getString("reserved_until");
+
+                        String reservedAt = AESUtils.decrypt(encryptedReservedAt);
+                        String reservedUntil = AESUtils.decrypt(encryptedReservedUntil);
+
                         System.out.println("Spot Number: " + spotNumber + ", Reserved By: " + fullName +
                                 ", Reserved At: " + reservedAt + ", Until: " + reservedUntil);
                     }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
                 }
             }
         } catch (SQLException e) {

@@ -159,14 +159,18 @@ public class ParkingClient {
             String endTimeInput = scanner.nextLine();
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
-            // تشفير البيانات المرسلة باستخدام AES
-            out.println(AESUtils.encrypt(String.valueOf(spotNumber)));
-            out.println(AESUtils.encrypt(startTime.format(formatter)));
-            out.println(AESUtils.encrypt(endTime.format(formatter)));
+            // تشفير البيانات المدخلة باستخدام AES قبل إرسالها
+            String encryptedSpotNumber = AESUtils.encrypt(String.valueOf(spotNumber));
+            String encryptedStartTime = AESUtils.encrypt(startTime.format(formatter));
+            String encryptedEndTime = AESUtils.encrypt(endTime.format(formatter));
+
+            out.println(encryptedSpotNumber);
+            out.println(encryptedStartTime);
+            out.println(encryptedEndTime);
 
             // إنشاء التوقيع الرقمي وإرساله باستخدام RSA
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-            String dataToSign = spotNumber + "|" + startTime.format(formatter) + "|" + endTime.format(formatter);
+            String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
             String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
 
@@ -272,14 +276,7 @@ public class ParkingClient {
         String line;
         while (true) {
             line = in.readLine();
-            if (line == null) break; // معالجة الأخطاء
-            try {
-                line = AESUtils.decrypt(line); // فك التشفير
-            } catch (Exception e) {
-                System.err.println("Error decrypting data: " + e.getMessage());
-                break;
-            }
-            if (line.equals("END_OF_RESERVATIONS")) { // انتهاء البيانات
+            if (line == null || line.equals("END_OF_RESERVATIONS")) { // انتهاء البيانات
                 break;
             }
             reservations.append(line).append("\n");

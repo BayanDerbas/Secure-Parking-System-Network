@@ -238,13 +238,12 @@ public class ParkingServer {
             return -1;
         }
         private void handleViewReservations() throws Exception {
-            StringBuilder reservations = new StringBuilder();
             String sql = """
-                        SELECT ps.spot_number, r.reserved_at, r.reserved_until
-                        FROM reservations r
-                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                        WHERE r.user_id = ?
-                    """;
+                SELECT ps.spot_number, r.reserved_at, r.reserved_until
+                FROM reservations r
+                JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                WHERE r.user_id = ?
+            """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -255,25 +254,22 @@ public class ParkingServer {
                 int index = 1; // لتعداد الحجوزات
                 while (rs.next()) {
                     int spotNumber = rs.getInt("spot_number");
-                    String reservedAt = rs.getString("reserved_at");
-                    String reservedUntil = rs.getString("reserved_until");
 
+                    // فك تشفير الحقول الحساسة
+                    String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
+                    String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
+
+                    // إنشاء النص النهائي
                     String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil;
-                    String encryptedData = AESUtils.encrypt(data); // تشفير البيانات
 
-                    reservations.append(encryptedData).append("\n");
-                    index++; // زيادة الرقم
+                    out.println(data); // إرسال النص مباشرة
+                    index++;
                 }
             } catch (Exception e) {
-                System.err.println("Error fetching or encrypting reservations: " + e.getMessage());
+                System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
             }
 
-            if (reservations.length() > 0) {
-                out.println(reservations.toString().trim());
-            } else {
-                out.println(AESUtils.encrypt("No reservations found.")); // تشفير الرسالة
-            }
-            out.println(AESUtils.encrypt("END_OF_RESERVATIONS")); // إشارة النهاية
+            out.println("END_OF_RESERVATIONS"); // إشارة النهاية
         }
         private boolean cancelReservation(int reservationId, double refundAmount) {
             String sqlDelete = "DELETE FROM reservations WHERE id = ?";
@@ -350,15 +346,18 @@ public class ParkingServer {
             }
 
             try {
+                // استقبال البيانات المشفرة من العميل
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
 
+                // فك تشفير البيانات باستخدام AES
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
 
-                String dataToSign = spotNumber + "|" + startTime + "|" + endTime;
+                // التحقق من التوقيع الرقمي باستخدام RSA
+                String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
                 if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
@@ -366,14 +365,17 @@ public class ParkingServer {
                     return;
                 }
 
+                // تحويل الوقت من String إلى LocalDateTime
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
                 double fee = calculateFee(start, end);
 
+                // إرسال الرسوم المشفرة باستخدام RSA
                 String encryptedFee = RSAUtils.encrypt(String.valueOf(fee), publicKey);
                 out.println(encryptedFee);
 
+                // استقبال توقيع الدفع من العميل
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
                 if (!DigitalSignatureUtil.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey)) {
@@ -381,15 +383,18 @@ public class ParkingServer {
                     return;
                 }
 
+                // التحقق من الرصيد
                 if (!deductUserBalance(fee)) {
                     out.println(AESUtils.encrypt("Error: Insufficient balance."));
                     return;
                 }
 
+                // إرسال رسالة الدفع الناجحة
                 String paymentSuccessMessage = "Payment successful!";
                 String encryptedPaymentSuccessMessage = RSAUtils.encrypt(paymentSuccessMessage, publicKey);
                 out.println(encryptedPaymentSuccessMessage);
 
+                // إجراء الحجز
                 if (reserveParkingSpot(spotNumber, startTime, endTime)) {
                     String reservationSuccessMessage = "Reservation successful!";
                     out.println(AESUtils.encrypt(reservationSuccessMessage));
@@ -403,26 +408,27 @@ public class ParkingServer {
         }
         private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
             String checkOverlap = """
-                        SELECT COUNT(*) AS overlap_count
-                        FROM reservations r
-                        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                        WHERE ps.spot_number = ?
-                        AND (
-                            (r.reserved_at <= ? AND r.reserved_until > ?) OR
-                            (r.reserved_at < ? AND r.reserved_until >= ?) OR
-                            (r.reserved_at >= ? AND r.reserved_until <= ?)
-                        )
-                    """;
+                SELECT COUNT(*) AS overlap_count
+                FROM reservations r
+                JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                WHERE ps.spot_number = ?
+                AND (
+                    (r.reserved_at <= ? AND r.reserved_until > ?) OR
+                    (r.reserved_at < ? AND r.reserved_until >= ?) OR
+                    (r.reserved_at >= ? AND r.reserved_until <= ?)
+                )
+            """;
 
             String insertReservation = """
-                        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
-                        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
-                    """;
+                INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
+                VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
+            """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement checkStmt = conn.prepareStatement(checkOverlap);
                  PreparedStatement insertStmt = conn.prepareStatement(insertReservation)) {
 
+                // تحقق من وجود تداخل في الحجز
                 checkStmt.setInt(1, spotNumber);
                 checkStmt.setString(2, endTime);
                 checkStmt.setString(3, startTime);
@@ -438,20 +444,26 @@ public class ParkingServer {
                     }
                 }
 
+                // تشفير البيانات قبل إدخالها في قاعدة البيانات
+                String encryptedStartTime = AESUtils.encrypt(startTime);
+                String encryptedEndTime = AESUtils.encrypt(endTime);
+
+                // حساب الرسوم
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
 
                 double fee = calculateFee(start, end);
 
+                // إدخال البيانات المشفرة
                 insertStmt.setInt(1, spotNumber);
                 insertStmt.setInt(2, getCurrentUserId());
-                insertStmt.setString(3, startTime);
-                insertStmt.setString(4, endTime);
+                insertStmt.setString(3, encryptedStartTime);
+                insertStmt.setString(4, encryptedEndTime);
                 insertStmt.setDouble(5, fee);
 
                 return insertStmt.executeUpdate() > 0;
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 System.err.println("Error reserving parking spot: " + e.getMessage());
             }
             return false;
