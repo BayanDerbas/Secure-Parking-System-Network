@@ -112,4 +112,5 @@ public class DigitalCertificateUtils {
         System.out.println("Valid Until: " + signedCertificate.getNotAfter());
         System.out.println("Serial Number: " + signedCertificate.getSerialNumber());
         System.out.println("Signature Algorithm: " + signedCertificate.getSigAlgName());
-    }}
+    }
+}

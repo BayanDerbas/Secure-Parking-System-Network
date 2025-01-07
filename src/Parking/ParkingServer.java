@@ -3,6 +3,7 @@ import Utils.*;
 import java.io.*;
 import java.net.*;
 import java.security.*;
+import java.security.cert.X509Certificate;
 import java.sql.*;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
@@ -89,6 +90,38 @@ public class ParkingServer {
                 System.err.println("Error closing resources: " + e.getMessage());
             }
         }
+        private int getUserIdByFullName(String fullName) {
+            String sql = "SELECT id FROM users WHERE full_name = ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, fullName);
+
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getInt("id");
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("Error retrieving user ID: " + e.getMessage());
+            }
+            return -1; // إذا لم يتم العثور على المستخدم
+        }
+        private boolean storeCertificate(int userId, String certificatePem, String publicKeyPem) {
+            String sql = "INSERT INTO certificates (user_id, certificate, public_key) VALUES (?, ?, ?)";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, userId);
+                pstmt.setString(2, certificatePem);
+                pstmt.setString(3, publicKeyPem);
+
+                pstmt.executeUpdate();
+                System.out.println("Certificate stored successfully!");
+                return true;
+            } catch (SQLException e) {
+                System.err.println("Error storing certificate: " + e.getMessage());
+                return false;
+            }
+        }
         private void handleRegister() throws IOException {
             String fullName = in.readLine();
             String userType = in.readLine();
@@ -96,9 +129,38 @@ public class ParkingServer {
             String carPlate = in.readLine();
             String encryptedPassword = in.readLine();
             double walletBalance = Double.parseDouble(in.readLine());
-
-            boolean isRegistered = registerUser(fullName, userType, phoneNumber, carPlate, encryptedPassword, walletBalance);
-            out.println(isRegistered ? "User registered successfully!" : "Registration failed!");
+            if (registerUser(fullName, userType, phoneNumber, carPlate, encryptedPassword, walletBalance)) {
+                out.println("User registered successfully!");
+                // طلب الشهادة الرقمية
+                if (in.readLine().equals("certificate")) {
+                    String distinguishedName = in.readLine();
+                    try {
+                        KeyPair keyPair = DigitalCertificateUtils.generateKeyPair();
+                        String csr = DigitalCertificateUtils.generateCSR(keyPair, distinguishedName);
+                        // توقيع الشهادة بواسطة CA
+                        String caDistinguishedName = "CN=CA, O=Authority, C=US";
+                        KeyPair caKeyPair = DigitalCertificateUtils.generateKeyPair(); // يمكن استبداله بمفتاح CA محفوظ
+                        X509Certificate certificate = DigitalCertificateUtils.signCSR(csr, caKeyPair, caDistinguishedName);
+                        // حفظ الشهادة في ملف
+                        String certificatePath = "C:\\Users\\ahmad\\Documents\\" + fullName + "_certificate.crt";
+                        DigitalCertificateUtils.saveCertificateToFile(certificate, certificatePath);
+                        // حفظ الشهادة إلى قاعدة البيانات
+                        String certificatePem = certificate.toString(); // أو تحويلها إلى PEM
+                        String publicKeyPem = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
+                        // استخراج معرف المستخدم الذي تم تسجيله للتو
+                        int userId = getUserIdByFullName(fullName);
+                        if (userId != -1 && storeCertificate(userId, certificatePem, publicKeyPem)) {
+                            out.println("Digital certificate created, stored, and saved successfully!");
+                        } else {
+                            out.println("Failed to store the digital certificate.");
+                        }
+                    } catch (Exception e) {
+                        out.println("Failed to create digital certificate: " + e.getMessage());
+                    }
+                }
+            } else {
+                out.println("Registration failed!");
+            }
         }
         private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword, double walletBalance) {
             try {
@@ -239,11 +301,11 @@ public class ParkingServer {
         }
         private void handleViewReservations() throws Exception {
             String sql = """
-                SELECT ps.spot_number, r.reserved_at, r.reserved_until
-                FROM reservations r
-                JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                WHERE r.user_id = ?
-            """;
+        SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
+    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -258,10 +320,10 @@ public class ParkingServer {
                     // فك تشفير الحقول الحساسة
                     String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
                     String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
+                    double fee = rs.getDouble("fee");
 
-                    // إنشاء النص النهائي
-                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil;
-
+                    // إنشاء النص النهائي مع الكلفة
+                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
                     out.println(data); // إرسال النص مباشرة
                     index++;
                 }

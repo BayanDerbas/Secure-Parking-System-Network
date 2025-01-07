@@ -75,6 +75,16 @@ public class ParkingClient {
         out.println(walletBalance);
 
         System.out.println("Server response: " + in.readLine());
+
+        // طلب إنشاء شهادة رقمية
+        System.out.println("\nDo you want to create a digital certificate? (yes/no): ");
+        if (scanner.nextLine().equalsIgnoreCase("yes")) {
+            System.out.print("Enter distinguished name for certificate (e.g., CN=John Doe, OU=IT, O=Company, C=US): ");
+            out.println("certificate"); // إرسال طلب الشهادة للخادم
+            out.println(scanner.nextLine());
+            System.out.println("Server response: " + in.readLine());
+        }
+
         System.out.println("Returning to main menu...");
     }
     private static void handleLogin(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
