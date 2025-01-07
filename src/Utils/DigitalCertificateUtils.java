@@ -12,10 +12,19 @@ import java.io.*;
 import java.security.*;
 import java.security.cert.*;
 import java.security.spec.*;
+import java.util.Base64;
 import java.util.Date;
 import java.math.BigInteger;
 
 public class DigitalCertificateUtils {
+    // تحويل المفتاح الخاص إلى Base64
+    public static String convertPrivateKeyToBase64(PrivateKey privateKey) {
+        return Base64.getEncoder().encodeToString(privateKey.getEncoded());
+    }
+    // تحويل المفتاح العام إلى Base64
+    public static String convertPublicKeyToBase64(PublicKey publicKey) {
+        return Base64.getEncoder().encodeToString(publicKey.getEncoded());
+    }
     // توليد مفتاح خاص وعام
     public static KeyPair generateKeyPair() throws NoSuchAlgorithmException {
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
@@ -91,7 +100,6 @@ public class DigitalCertificateUtils {
         try (FileOutputStream fos = new FileOutputStream(filePath)) {
             fos.write(certificate.getEncoded());
         }
-        System.out.println("Certificate saved to: " + filePath);
     }
     public static void main(String[] args) throws Exception {
         // توليد مفتاح خاص وعام للـ CA

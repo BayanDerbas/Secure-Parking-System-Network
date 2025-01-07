@@ -104,27 +104,37 @@ public class ParkingServer {
             }
             return -1; // إذا لم يتم العثور على المستخدم
         }
-        private boolean storeCertificate(int userId, String certificatePem, String publicKeyPem) {
-            String sql = "INSERT INTO certificates (user_id, certificate, public_key) VALUES (?, ?, ?)";
+        private boolean storeCertificate(int userId, String certificatePem, String publicKeyPem, String privateKeyPem) {
+            String encryptedPrivateKey = null;
+
+            // تشفير المفتاح الخاص
+            try {
+                if (privateKeyPem != null && !privateKeyPem.isEmpty()) {
+                    encryptedPrivateKey = AESUtils.encrypt(privateKeyPem);  // تشفير المفتاح الخاص
+                    System.out.println("Encrypted Private Key: " + encryptedPrivateKey); // طباعة المفتاح المشفر
+                }
+            } catch (Exception e) {
+                System.err.println("Error encrypting private key: " + e.getMessage());
+                return false;
+            }
+
+            // حفظ البيانات في قاعدة البيانات
+            String sql = "INSERT INTO certificates (user_id, certificate, public_key, private_key) VALUES (?, ?, ?, ?)";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setInt(1, userId);
                 pstmt.setString(2, certificatePem);
                 pstmt.setString(3, publicKeyPem);
+                pstmt.setString(4, encryptedPrivateKey);  // تخزين المفتاح الخاص المشفر
 
                 pstmt.executeUpdate();
-
-                // إضافة تفاصيل التوثيق
-                LocalDateTime storeTimestamp = LocalDateTime.now();
-                String verificationKey = "User's Public Key"; // يمكن أن يكون المفتاح العام للمستخدم أو أي مفتاح آخر مرتبط بالتوثيق
-
                 System.out.println("Certificate stored successfully!");
-                System.out.println("Stored at: " + storeTimestamp);
-                System.out.println("Verification key used: " + verificationKey);
-
                 return true;
+
             } catch (SQLException e) {
                 System.err.println("Error storing certificate: " + e.getMessage());
+                System.err.println("SQL State: " + e.getSQLState());
+                System.err.println("Error Code: " + e.getErrorCode());
                 return false;
             }
         }
@@ -135,28 +145,61 @@ public class ParkingServer {
             String carPlate = in.readLine();
             String encryptedPassword = in.readLine();
             double walletBalance = Double.parseDouble(in.readLine());
+
+            // التحقق من وجود المستخدم مسبقًا
+            int userId = getUserIdByFullName(fullName);
+            if (userId != -1) {
+                out.println("User already exists!");
+                return;
+            }
+
+            // تسجيل المستخدم
             if (registerUser(fullName, userType, phoneNumber, carPlate, encryptedPassword, walletBalance)) {
                 out.println("User registered successfully!");
+
                 // طلب الشهادة الرقمية
                 if (in.readLine().equals("certificate")) {
                     String distinguishedName = in.readLine();
                     try {
+                        // توليد المفاتيح
                         KeyPair keyPair = DigitalCertificateUtils.generateKeyPair();
+
+                        // توليد CSR
                         String csr = DigitalCertificateUtils.generateCSR(keyPair, distinguishedName);
-                        // توقيع الشهادة بواسطة CA
+
+                        // توقيع الشهادة
                         String caDistinguishedName = "CN=CA, O=Authority, C=US";
-                        KeyPair caKeyPair = DigitalCertificateUtils.generateKeyPair(); // يمكن استبداله بمفتاح CA محفوظ
+                        KeyPair caKeyPair = DigitalCertificateUtils.generateKeyPair();
                         X509Certificate certificate = DigitalCertificateUtils.signCSR(csr, caKeyPair, caDistinguishedName);
-                        // حفظ الشهادة في ملف
-                        String certificatePath = "C:\\Users\\ahmad\\Documents\\" + fullName + "_certificate.crt";
-                        DigitalCertificateUtils.saveCertificateToFile(certificate, certificatePath);
-                        // حفظ الشهادة إلى قاعدة البيانات
-                        String certificatePem = certificate.toString(); // أو تحويلها إلى PEM
-                        String publicKeyPem = Base64.getEncoder().encodeToString(keyPair.getPublic().getEncoded());
-                        // استخراج معرف المستخدم الذي تم تسجيله للتو
-                        int userId = getUserIdByFullName(fullName);
-                        if (userId != -1 && storeCertificate(userId, certificatePem, publicKeyPem)) {
-                            out.println("Digital certificate created, stored, and saved successfully!");
+
+                        // تحويل المفاتيح والشهادة إلى Base64
+                        String certificatePem = certificate.toString();
+                        String publicKeyPem = DigitalCertificateUtils.convertPublicKeyToBase64(keyPair.getPublic());
+                        String privateKeyPem = DigitalCertificateUtils.convertPrivateKeyToBase64(keyPair.getPrivate());
+
+                        // طباعة المفاتيح والشهادة
+                        System.out.println("Public Key (Base64):");
+                        System.out.println(publicKeyPem);
+
+                        System.out.println("Private Key (Base64):");
+                        System.out.println(privateKeyPem);
+
+                        System.out.println("Certificate (PEM):");
+                        System.out.println(certificatePem);
+
+                        // حفظ إلى قاعدة البيانات
+                        userId = getUserIdByFullName(fullName);
+                        if (storeCertificate(userId, certificatePem, publicKeyPem, privateKeyPem)) {
+                            out.println("Digital certificate created and stored successfully!");
+
+                            // حفظ الشهادة في ملف
+                            String certificateFilePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+                            try {
+                                DigitalCertificateUtils.saveCertificateToFile(certificate, certificateFilePath);
+                                System.out.println("Certificate saved to: " + certificateFilePath);
+                            } catch (Exception e) {
+                                System.err.println("Failed to save certificate to file: " + e.getMessage());
+                            }
                         } else {
                             out.println("Failed to store the digital certificate.");
                         }
@@ -170,7 +213,6 @@ public class ParkingServer {
         }
         private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword, double walletBalance) {
             try {
-
                 System.out.println("Encrypted data to be stored:");
                 System.out.println("Password: " + encryptedPassword);
                 System.out.println("Phone: ");
@@ -446,32 +488,39 @@ public class ParkingServer {
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots);
             out.println("END_OF_SPOTS");
+
             if (availableSpots.equals("No parking spots available.")) {
                 return;
             }
+
             try {
                 // استقبال البيانات المشفرة من العميل
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
+
                 // استلام الشهادة من العميل
                 String encodedCertificate = in.readLine();
                 if (!verifyCertificate(encodedCertificate)) {
                     out.println(AESUtils.encrypt("Error: Invalid certificate."));
                     return;
                 }
+
                 // فك تشفير البيانات باستخدام AES
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
+
                 // التحقق من التوقيع الرقمي باستخدام RSA
                 String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
+
                 if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
                 }
+
                 // تحويل الوقت من String إلى LocalDateTime
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
@@ -504,7 +553,33 @@ public class ParkingServer {
                 // إجراء الحجز
                 if (reserveParkingSpot(spotNumber, startTime, endTime)) {
                     String reservationSuccessMessage = "Reservation successful!";
-                    out.println(AESUtils.encrypt(reservationSuccessMessage));
+
+                    // إرسال التوقيع الرقمي في قاعدة البيانات
+                    String reservationSignature = receivedReservationSignature;  // التوقيع الرقمي المستلم
+                    String paymentSignature = receivedPaymentSignature;  // توقيع الدفع المستلم
+
+                    // إدخال الحجز في قاعدة البيانات مع التوقيع الرقمي للحجز والدفع
+                    String insertReservationWithSignatures = """
+        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
+        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
+        """;
+
+                    try (Connection conn = DriverManager.getConnection(DB_URL);
+                         PreparedStatement stmt = conn.prepareStatement(insertReservationWithSignatures)) {
+                        stmt.setInt(1, spotNumber);
+                        stmt.setInt(2, getCurrentUserId());  // تأكد من أنك تقوم بتحديد ID المستخدم بشكل صحيح
+                        stmt.setString(3, AESUtils.encrypt(startTime));
+                        stmt.setString(4, AESUtils.encrypt(endTime));
+                        stmt.setDouble(5, fee);
+                        stmt.setString(6, reservationSignature);  // تخزين التوقيع الرقمي للحجز
+                        stmt.setString(7, paymentSignature);     // تخزين التوقيع الرقمي للدفع
+
+                        stmt.executeUpdate();
+                        out.println(AESUtils.encrypt(reservationSuccessMessage));
+                    } catch (SQLException e) {
+                        System.err.println("Error saving reservation with digital signatures: " + e.getMessage());
+                        out.println(AESUtils.encrypt("Error: Unable to store reservation."));
+                    }
                 } else {
                     out.println(AESUtils.encrypt("The spot is already reserved during the specified time."));
                 }
@@ -515,21 +590,21 @@ public class ParkingServer {
         }
         private boolean reserveParkingSpot(int spotNumber, String startTime, String endTime) {
             String checkOverlap = """
-                SELECT COUNT(*) AS overlap_count
-                FROM reservations r
-                JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                WHERE ps.spot_number = ?
-                AND (
-                    (r.reserved_at <= ? AND r.reserved_until > ?) OR
-                    (r.reserved_at < ? AND r.reserved_until >= ?) OR
-                    (r.reserved_at >= ? AND r.reserved_until <= ?)
-                )
-            """;
+        SELECT COUNT(*) AS overlap_count
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE ps.spot_number = ?
+        AND (
+            (r.reserved_at <= ? AND r.reserved_until > ?) OR
+            (r.reserved_at < ? AND r.reserved_until >= ?) OR
+            (r.reserved_at >= ? AND r.reserved_until <= ?)
+        )
+    """;
 
             String insertReservation = """
-                INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
-                VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
-            """;
+        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee) 
+        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?);
+    """;
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement checkStmt = conn.prepareStatement(checkOverlap);
@@ -564,7 +639,7 @@ public class ParkingServer {
 
                 // إدخال البيانات المشفرة
                 insertStmt.setInt(1, spotNumber);
-                insertStmt.setInt(2, getCurrentUserId());
+                insertStmt.setInt(2, getCurrentUserId());  // تأكد من أنك تقوم بتحديد ID المستخدم
                 insertStmt.setString(3, encryptedStartTime);
                 insertStmt.setString(4, encryptedEndTime);
                 insertStmt.setDouble(5, fee);

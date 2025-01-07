@@ -1,5 +1,7 @@
 package DataBase;
+
 import Utils.AESUtils;
+import Utils.RSAUtils;
 
 import java.sql.*;
 import java.util.*;
@@ -42,51 +44,55 @@ public class DatabaseSetup {
             }
         }
     }
-    // إنشاء الجداول إذا لم تكن موجودة
     private static void createTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {
                 System.out.println("Connected to the database!");
+                // إنشاء جدول المستخدمين
                 String createUsersTable = """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    full_name TEXT NOT NULL,
-                    user_type TEXT NOT NULL,
-                    phone_number TEXT NOT NULL,
-                    car_plate TEXT NOT NULL,
-                    password TEXT NOT NULL,
-                    wallet_balance REAL DEFAULT 0.0
-                );
-                """;
+                        CREATE TABLE IF NOT EXISTS users (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            full_name TEXT NOT NULL,
+                            user_type TEXT NOT NULL,
+                            phone_number TEXT NOT NULL,
+                            car_plate TEXT NOT NULL,
+                            password TEXT NOT NULL,
+                            wallet_balance REAL DEFAULT 0.0
+                        );
+                        """;
+                // إنشاء جدول مواقف السيارات
                 String createParkingSpotsTable = """
-                CREATE TABLE IF NOT EXISTS parking_spots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    spot_number INTEGER NOT NULL UNIQUE,
-                    is_reserved BOOLEAN NOT NULL DEFAULT 0
-                );
-                """;
+                        CREATE TABLE IF NOT EXISTS parking_spots (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            spot_number INTEGER NOT NULL UNIQUE,
+                            is_reserved BOOLEAN NOT NULL DEFAULT 0
+                        );
+                        """;
+                // إنشاء جدول الحجوزات
                 String createReservationsTable = """
-                CREATE TABLE IF NOT EXISTS reservations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    parking_spot_id INTEGER NOT NULL,
-                    user_id INTEGER NOT NULL,
-                    reserved_at TEXT NOT NULL,
-                    reserved_until TEXT NOT NULL,
-                    fee REAL NOT NULL DEFAULT 0.0,
-                    FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-                """;
+                        CREATE TABLE IF NOT EXISTS reservations (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            parking_spot_id INTEGER NOT NULL,
+                            user_id INTEGER NOT NULL,
+                            reserved_at TEXT NOT NULL,
+                            reserved_until TEXT NOT NULL,
+                            fee REAL NOT NULL DEFAULT 0.0,
+                            digital_signature_reservation TEXT,  -- توقيع الحجز الرقمي
+                            digital_signature_payment TEXT,      -- توقيع الدفع الرقمي
+                            FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
+                            FOREIGN KEY (user_id) REFERENCES users(id)
+                        );
+                        """;
+                // إنشاء جدول الشهادات
                 String createCertificatesTable = """
-                CREATE TABLE IF NOT EXISTS certificates (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    certificate TEXT NOT NULL,
-                    public_key TEXT NOT NULL,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-                """;
-
+                            CREATE TABLE IF NOT EXISTS certificates (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    user_id INTEGER NOT NULL,
+                                    certificate TEXT NOT NULL,
+                                    FOREIGN KEY (user_id) REFERENCES users (id)
+                                );
+                        """;
+                // تنفيذ جمل إنشاء الجداول
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createUsersTable);
                     stmt.execute(createParkingSpotsTable);
@@ -94,14 +100,14 @@ public class DatabaseSetup {
                     stmt.execute(createCertificatesTable); // إنشاء جدول الشهادات
                     System.out.println("Tables created successfully!");
                 }
-
+                // إضافة المواقف المبدئية
                 String insertInitialSpots = """
-                INSERT INTO parking_spots (spot_number)
-                VALUES 
-                    (1), (2), (3), (4), (5),
-                    (6), (7), (8), (9), (10)
-                ON CONFLICT(spot_number) DO NOTHING;
-                """;
+                        INSERT INTO parking_spots (spot_number)
+                        VALUES 
+                            (1), (2), (3), (4), (5),
+                            (6), (7), (8), (9), (10)
+                        ON CONFLICT(spot_number) DO NOTHING;
+                        """;
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(insertInitialSpots);
                     System.out.println("Initial parking spots added successfully!");
@@ -140,11 +146,11 @@ public class DatabaseSetup {
 
                 // استعلام لعرض الشهادات الرقمية
                 String viewCertificates = """
-            SELECT u.full_name, c.certificate, c.public_key
-            FROM certificates c
-            JOIN users u ON c.user_id = u.id
-            ORDER BY u.id;
-            """;
+                        SELECT u.full_name, c.certificate
+                        FROM certificates c
+                        JOIN users u ON c.user_id = u.id
+                        ORDER BY u.id;
+                        """;
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(viewCertificates)) {
                     System.out.println("Certificates:");
@@ -152,11 +158,10 @@ public class DatabaseSetup {
                     while (rs.next()) {
                         String fullName = rs.getString("full_name");
                         String certificate = rs.getString("certificate");
-                        String publicKey = rs.getString("public_key");
 
                         // تحقق من أن المستخدم الحالي مختلف عن المستخدم السابق
                         if (!fullName.equals(lastUser)) {
-                            System.out.println("User: " + fullName + "\nCertificate:\n" + certificate + "\nPublic Key:\n" + publicKey);
+                            System.out.println("User: " + fullName + "\nCertificate:\n" + certificate);
                         }
                         lastUser = fullName;  // تحديث المستخدم الأخير
                     }
@@ -177,14 +182,14 @@ public class DatabaseSetup {
                 }
                 System.out.println(".........................................................");
 
-                // استعلام لعرض الحجوزات مع الكلفة
+                // استعلام لعرض الحجوزات مع التوقيع الرقمي للحجز وتوقيع الدفع
                 String viewReservations = """
-            SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
-            FROM reservations r
-            JOIN parking_spots ps ON r.parking_spot_id = ps.id
-            JOIN users u ON r.user_id = u.id
-            ORDER BY r.reserved_at;
-            """;
+                            SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee, r.digital_signature_reservation, r.digital_signature_payment
+                            FROM reservations r
+                            JOIN parking_spots ps ON r.parking_spot_id = ps.id
+                            JOIN users u ON r.user_id = u.id
+                            ORDER BY r.reserved_at;
+                        """;
                 try (Statement stmt = conn.createStatement();
                      ResultSet rs = stmt.executeQuery(viewReservations)) {
                     System.out.println("Reservations:");
@@ -199,11 +204,16 @@ public class DatabaseSetup {
                         String reservedAt = AESUtils.decrypt(encryptedReservedAt);
                         String reservedUntil = AESUtils.decrypt(encryptedReservedUntil);
                         double fee = rs.getDouble("fee"); // استخراج الكلفة
-
-                        // عرض البيانات مع الكلفة
+                        String reservationDigitalSignature = rs.getString("digital_signature_reservation");  // توقيع الحجز الرقمي
+                        String paymentDigitalSignature = rs.getString("digital_signature_payment");  // توقيع الدفع الرقمي
+                        // عرض البيانات مع التوقيعين الرقميين
                         System.out.println("Spot Number: " + spotNumber + ", Reserved By: " + fullName +
-                                ", Reserved At: " + reservedAt + ", Until: " + reservedUntil + ", Fee: $" + fee);
+                                ", Reserved At: " + reservedAt + ", Until: " + reservedUntil + ", Fee: $" + fee +
+                                ",\n Reservation Digital Signature: " + reservationDigitalSignature +
+                                ",\n Payment Digital Signature: " + paymentDigitalSignature);
                     }
+                } catch (SQLException e) {
+                    System.err.println("Error retrieving reservations data: " + e.getMessage());
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -212,7 +222,6 @@ public class DatabaseSetup {
             System.err.println("Error retrieving data: " + e.getMessage());
         }
     }
-    // حذف البيانات
     private static void deleteData() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {
@@ -233,7 +242,6 @@ public class DatabaseSetup {
             System.err.println("Error deleting data: " + e.getMessage());
         }
     }
-    // حذف الجداول
     private static void dropTables() {
         try (Connection conn = DriverManager.getConnection(DB_URL)) {
             if (conn != null) {

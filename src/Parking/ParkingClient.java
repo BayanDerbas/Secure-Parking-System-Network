@@ -48,6 +48,8 @@ public class ParkingClient {
     }
     private static void handleRegister(PrintWriter out, BufferedReader in, Scanner scanner) throws IOException {
         out.println("register");
+
+        // قراءة البيانات
         System.out.print("Enter your full name: ");
         out.println(scanner.nextLine());
         System.out.print("Enter your user type (Visitor/Employee): ");
@@ -58,6 +60,8 @@ public class ParkingClient {
         out.println(scanner.nextLine());
         System.out.print("Enter your password: ");
         String rawPassword = scanner.nextLine();
+
+        // تشفير كلمة المرور
         try {
             String encryptedPassword = AESUtils.encrypt(rawPassword);
             out.println(encryptedPassword);
@@ -65,21 +69,22 @@ public class ParkingClient {
             System.err.println("Error encrypting password: " + e.getMessage());
             return;
         }
+
         System.out.print("Enter your wallet balance: ");
-        double walletBalance = scanner.nextDouble();
-        scanner.nextLine(); // consume the newline character
-        out.println(walletBalance);
+        out.println(scanner.nextDouble());
+        scanner.nextLine();
+
+        // استجابة الخادم
         System.out.println("Server response: " + in.readLine());
-        System.out.println("........................Digital Certificate........................");
-        // طلب إنشاء شهادة رقمية
-        System.out.println("\nDo you want to create a digital certificate? (yes/no): ");
+
+        // طلب الشهادة الرقمية
+        System.out.println("Do you want to create a digital certificate? (yes/no): ");
         if (scanner.nextLine().equalsIgnoreCase("yes")) {
-            System.out.print("Enter distinguished name for certificate (e.g., CN=John Doe, OU=IT, O=Company, C=US): ");
-            out.println("certificate"); // إرسال طلب الشهادة للخادم
+            System.out.print("Enter distinguished name for certificate (e.g., CN=John Doe, OU=IT, O=Company, C=US):");
+            out.println("certificate");
             out.println(scanner.nextLine());
             System.out.println("Server response: " + in.readLine());
         }
-        System.out.println("Returning to main menu...");
     }
     private static void handleLogin(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
         System.out.println("Sending login request to the server...");
@@ -165,6 +170,7 @@ public class ParkingClient {
             System.out.println("No parking spots available. Returning to main menu.");
             return;
         }
+
         try {
             // إدخال بيانات الحجز
             System.out.print("Enter the spot number: ");
@@ -177,6 +183,7 @@ public class ParkingClient {
             System.out.print("Enter the end time (yyyy-MM-dd HH:mm): ");
             String endTimeInput = scanner.nextLine();
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
+
             // تشفير البيانات المدخلة باستخدام AES قبل إرسالها
             String encryptedSpotNumber = AESUtils.encrypt(String.valueOf(spotNumber));
             String encryptedStartTime = AESUtils.encrypt(startTime.format(formatter));
@@ -184,6 +191,7 @@ public class ParkingClient {
             out.println(encryptedSpotNumber);
             out.println(encryptedStartTime);
             out.println(encryptedEndTime);
+
             System.out.println("........................Digital Certificate........................");
             // استخدام fullName لتحديد مسار الشهادة
             String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
@@ -198,16 +206,19 @@ public class ParkingClient {
             } else {
                 System.err.println("Certificate file not found.");
             }
+
             // إنشاء التوقيع الرقمي وإرساله باستخدام RSA
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
             String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
             String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
+
             // استقبال الرسوم المشفرة من الخادم (بـ RSA)
             String encryptedFee = in.readLine();
             String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
             double fee = Double.parseDouble(decryptedFee);
             System.out.println("The reservation fee is: " + fee);
+
             // تأكيد الدفع باستخدام RSA
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
             String confirmation = scanner.nextLine().trim().toLowerCase();
@@ -216,14 +227,17 @@ public class ParkingClient {
                 System.out.println("Reservation canceled.");
                 return;
             }
+
             // إرسال توقيع تأكيد الدفع باستخدام RSA
             String paymentConfirmation = "confirm_payment";
             String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
             out.println(paymentSignature);
+
             // استقبال الرد النهائي من الخادم
             String encryptedResponse = in.readLine();
             String decryptedResponse = RSAUtils.decrypt(encryptedResponse, privateKey);
             System.out.println(decryptedResponse);
+
             if (decryptedResponse.equals("Payment successful!")) {
                 // استقبال رسالة الحجز من الخادم (مشفره بـ AES)
                 String encryptedReservationMessage = in.readLine();
@@ -232,6 +246,7 @@ public class ParkingClient {
             } else {
                 System.out.println("Payment failed.");
             }
+
         } catch (Exception e) {
             System.err.println("Error during reservation: " + e.getMessage());
         }
