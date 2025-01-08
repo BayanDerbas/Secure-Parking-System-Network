@@ -124,102 +124,173 @@ public class DatabaseSetup {
                 System.out.println(".........................................................");
 
                 // استعلام لعرض جميع المستخدمين
-                String viewUsers = "SELECT * FROM users;";
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(viewUsers)) {
-                    System.out.println("Users:");
-                    while (rs.next()) {
-                        int id = rs.getInt("id");
-                        String fullName = rs.getString("full_name");
-                        String userType = rs.getString("user_type");
-                        String phoneNumber = rs.getString("phone_number");
-                        String carPlate = rs.getString("car_plate");
-                        String password = rs.getString("password");
-                        double walletBalance = rs.getDouble("wallet_balance");
-
-                        System.out.println("ID: " + id + ", Name: " + fullName + ", Type: " + userType +
-                                ", Phone: " + phoneNumber + ", Car Plate: " + carPlate +
-                                ", Password: " + password + ", Wallet Balance: " + walletBalance);
-                    }
-                }
-                System.out.println(".........................................................");
+                viewUsers(conn);
 
                 // استعلام لعرض الشهادات الرقمية
-                String viewCertificates = """
-                        SELECT u.full_name, c.certificate
-                        FROM certificates c
-                        JOIN users u ON c.user_id = u.id
-                        ORDER BY u.id;
-                        """;
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(viewCertificates)) {
-                    System.out.println("Certificates:");
-                    String lastUser = "";
-                    while (rs.next()) {
-                        String fullName = rs.getString("full_name");
-                        String certificate = rs.getString("certificate");
-
-                        // تحقق من أن المستخدم الحالي مختلف عن المستخدم السابق
-                        if (!fullName.equals(lastUser)) {
-                            System.out.println("User: " + fullName + "\nCertificate:\n" + certificate);
-                        }
-                        lastUser = fullName;  // تحديث المستخدم الأخير
-                    }
-                }
-                System.out.println(".........................................................");
+                viewCertificates(conn);
 
                 // استعلام لعرض مواقف السيارات
-                String viewParkingSpots = "SELECT * FROM parking_spots;";
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(viewParkingSpots)) {
-                    System.out.println("Parking Spots:");
-                    while (rs.next()) {
-                        int id = rs.getInt("id");
-                        int spotNumber = rs.getInt("spot_number");
-
-                        System.out.println("ID: " + id + ", Spot Number: " + spotNumber);
-                    }
-                }
-                System.out.println(".........................................................");
+                viewParkingSpots(conn);
 
                 // استعلام لعرض الحجوزات مع التوقيع الرقمي للحجز وتوقيع الدفع
-                String viewReservations = """
-                            SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee, r.digital_signature_reservation, r.digital_signature_payment
-                            FROM reservations r
-                            JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                            JOIN users u ON r.user_id = u.id
-                            ORDER BY r.reserved_at;
-                        """;
-                try (Statement stmt = conn.createStatement();
-                     ResultSet rs = stmt.executeQuery(viewReservations)) {
-                    System.out.println("Reservations:");
-                    while (rs.next()) {
-                        int spotNumber = rs.getInt("spot_number");
-                        String fullName = rs.getString("full_name");
-
-                        // فك تشفير وقت الحجز
-                        String encryptedReservedAt = rs.getString("reserved_at");
-                        String encryptedReservedUntil = rs.getString("reserved_until");
-
-                        String reservedAt = AESUtils.decrypt(encryptedReservedAt);
-                        String reservedUntil = AESUtils.decrypt(encryptedReservedUntil);
-                        double fee = rs.getDouble("fee"); // استخراج الكلفة
-                        String reservationDigitalSignature = rs.getString("digital_signature_reservation");  // توقيع الحجز الرقمي
-                        String paymentDigitalSignature = rs.getString("digital_signature_payment");  // توقيع الدفع الرقمي
-                        // عرض البيانات مع التوقيعين الرقميين
-                        System.out.println("Spot Number: " + spotNumber + ", Reserved By: " + fullName +
-                                ", Reserved At: " + reservedAt + ", Until: " + reservedUntil + ", Fee: $" + fee +
-                                ",\n Reservation Digital Signature: " + reservationDigitalSignature +
-                                ",\n Payment Digital Signature: " + paymentDigitalSignature);
-                    }
-                } catch (SQLException e) {
-                    System.err.println("Error retrieving reservations data: " + e.getMessage());
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+                viewReservations(conn);
+                viewSignatures(conn);
             }
         } catch (SQLException e) {
             System.err.println("Error retrieving data: " + e.getMessage());
+        }
+    }
+    private static void viewUsers(Connection conn) {
+        String viewUsers = "SELECT * FROM users;";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(viewUsers)) {
+            System.out.println("Users:");
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String fullName = rs.getString("full_name");
+                String userType = rs.getString("user_type");
+                String phoneNumber = rs.getString("phone_number");
+                String carPlate = rs.getString("car_plate");
+                String password = rs.getString("password");
+                double walletBalance = rs.getDouble("wallet_balance");
+
+                System.out.println("ID: " + id + ", Name: " + fullName + ", Type: " + userType +
+                        ", Phone: " + phoneNumber + ", Car Plate: " + carPlate +
+                        ", Password: " + password + ", Wallet Balance: " + walletBalance);
+            }
+            System.out.println(".........................................................");
+        } catch (SQLException e) {
+            System.err.println("Error retrieving users data: " + e.getMessage());
+        }
+    }
+    private static void viewCertificates(Connection conn) {
+        String viewCertificates = """
+        SELECT u.full_name, c.certificate
+        FROM certificates c
+        JOIN users u ON c.user_id = u.id
+        ORDER BY u.id;
+    """;
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(viewCertificates)) {
+            System.out.println("Certificates:");
+            String lastUser = "";
+            while (rs.next()) {
+                String fullName = rs.getString("full_name");
+                String certificate = rs.getString("certificate");
+
+                // تحقق من أن المستخدم الحالي مختلف عن المستخدم السابق
+                if (!fullName.equals(lastUser)) {
+                    System.out.println("User: " + fullName + "\nCertificate:\n" + certificate);
+                }
+                lastUser = fullName;  // تحديث المستخدم الأخير
+            }
+            System.out.println(".........................................................");
+        } catch (SQLException e) {
+            System.err.println("Error retrieving certificates data: " + e.getMessage());
+        }
+    }
+    private static void viewParkingSpots(Connection conn) {
+        String viewParkingSpots = "SELECT * FROM parking_spots;";
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(viewParkingSpots)) {
+            System.out.println(".........................................................");
+            System.out.println("Parking Spots:");
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                int spotNumber = rs.getInt("spot_number");
+
+                System.out.println("ID: " + id + ", Spot Number: " + spotNumber);
+            }
+            System.out.println(".........................................................");
+        } catch (SQLException e) {
+            System.err.println("Error retrieving parking spots data: " + e.getMessage());
+        }
+    }
+    private static void viewReservations(Connection conn) {
+        String viewReservations = """
+        SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        JOIN users u ON r.user_id = u.id
+        ORDER BY r.reserved_at;
+    """;
+
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(viewReservations)) {
+            System.out.println("Reservations:");
+
+            // استخدام قائمة لتخزين الحجوزات الفريدة
+            List<String> reservations = new ArrayList<>();
+
+            while (rs.next()) {
+                int spotNumber = rs.getInt("spot_number");
+                String fullName = rs.getString("full_name");
+
+                // فك تشفير أوقات الحجز
+                String encryptedReservedAt = rs.getString("reserved_at");
+                String encryptedReservedUntil = rs.getString("reserved_until");
+
+                String reservedAt = AESUtils.decrypt(encryptedReservedAt);
+                String reservedUntil = AESUtils.decrypt(encryptedReservedUntil);
+                double fee = rs.getDouble("fee");
+
+                // تجميع بيانات الحجز
+                String reservationEntry = String.format(
+                        "Spot Number: %d, Reserved By: %s, Reserved At: %s, Until: %s, Fee: $%.2f",
+                        spotNumber, fullName, reservedAt, reservedUntil, fee
+                );
+
+                // التحقق من أن الحجز غير مكرر
+                if (!reservations.contains(reservationEntry)) {
+                    reservations.add(reservationEntry);
+                }
+            }
+
+            // عرض الحجوزات كقائمة تعدادات
+            if (!reservations.isEmpty()) {
+                for (int i = 0; i < reservations.size(); i++) {
+                    System.out.printf("%d. %s%n", i + 1, reservations.get(i));
+                }
+            } else {
+                System.out.println("No reservations found.");
+            }
+
+        } catch (SQLException e) {
+            System.err.println("Error retrieving reservations data: " + e.getMessage());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+    private static void viewSignatures(Connection conn) {
+        String viewSignatures = """
+        SELECT ps.spot_number, u.full_name, r.digital_signature_reservation, r.digital_signature_payment
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        JOIN users u ON r.user_id = u.id
+        WHERE r.digital_signature_reservation IS NOT NULL 
+          AND r.digital_signature_payment IS NOT NULL
+        ORDER BY r.reserved_at;
+    """;
+
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(viewSignatures)) {
+            System.out.println();
+            System.out.println("Completed Signatures:");
+
+            while (rs.next()) {
+                int spotNumber = rs.getInt("spot_number");
+                String fullName = rs.getString("full_name");
+                String reservationDigitalSignature = rs.getString("digital_signature_reservation");
+                String paymentDigitalSignature = rs.getString("digital_signature_payment");
+
+                // Formatting the output for better readability
+                System.out.printf("Spot Number: %d, Reserved By: %s%n", spotNumber, fullName);
+                System.out.printf("Reservation Signature: %s%n", reservationDigitalSignature);
+                System.out.printf("Payment Signature: %s%n", paymentDigitalSignature);
+                System.out.println("------------------------------------");
+            }
+        } catch (SQLException e) {
+            System.err.println("Error retrieving signatures data: " + e.getMessage());
         }
     }
     private static void deleteData() {

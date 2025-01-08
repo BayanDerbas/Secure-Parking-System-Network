@@ -379,79 +379,45 @@ public class ParkingServer {
         }
         private void handleViewReservations() throws Exception {
             String sql = """
-                  SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-                  FROM reservations r
-                  JOIN parking_spots ps ON r.parking_spot_id = ps.id
-                  WHERE r.user_id = ?
-                        """;
+    SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+    FROM reservations r
+    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+    WHERE r.user_id = ?
+    ORDER BY r.reserved_at;
+    """;
+
+            Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
+
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
                 stmt.setInt(1, getCurrentUserId());
                 ResultSet rs = stmt.executeQuery();
-                int index = 1; // لتعداد الحجوزات
+                int index = 1;
+
                 while (rs.next()) {
                     int spotNumber = rs.getInt("spot_number");
-                    // فك تشفير الحقول الحساسة
                     String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
                     String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
                     double fee = rs.getDouble("fee");
-                    // إنشاء النص النهائي مع الكلفة
-                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
-                    out.println(data); // إرسال النص مباشرة
-                    index++;
+
+                    String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
+
+                    // التحقق من عدم إرسال نفس الحجز مرتين
+                    if (!uniqueReservations.contains(data)) {
+                        uniqueReservations.add(data); // إضافة الحجز إلى المجموعة
+                        out.println(index + ". " + data); // إرسال النص مباشرة
+                        index++;
+                    }
+                }
+
+                if (index == 1) {
+                    out.println("No reservations found.");
                 }
             } catch (Exception e) {
                 System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
             }
-            out.println("END_OF_RESERVATIONS"); // إشارة النهاية
-            System.out.println("........................Digital Certificate........................");
-            // التحقق من شهادة العميل
-            String encodedCertificate = in.readLine(); // استلام الشهادة المشفرة Base64
-            byte[] certificateBytes = Base64.getDecoder().decode(encodedCertificate);
-            CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-            X509Certificate clientCertificate = (X509Certificate) certFactory.generateCertificate(new ByteArrayInputStream(certificateBytes));
-            PublicKey clientPublicKey = clientCertificate.getPublicKey();
-            // تحقق من صحة الشهادة
-            try {
-                clientCertificate.checkValidity(); // التأكد من أن الشهادة صالحة
-                System.out.println("Client certificate is valid.");
-            } catch (CertificateException e) {
-                System.err.println("Client certificate is not valid.");
-                out.println(AESUtils.encrypt("Invalid certificate."));
-                return;
-            }
-        }
-        private boolean cancelReservation(int reservationId, double refundAmount) {
-            String sqlDelete = "DELETE FROM reservations WHERE id = ?";
-            String sqlRefund = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
 
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement deleteStmt = conn.prepareStatement(sqlDelete);
-                 PreparedStatement refundStmt = conn.prepareStatement(sqlRefund)) {
-
-                conn.setAutoCommit(false); // بدء معاملة
-
-                // حذف الحجز
-                deleteStmt.setInt(1, reservationId);
-                if (deleteStmt.executeUpdate() <= 0) {
-                    conn.rollback();
-                    return false;
-                }
-
-                // إعادة نصف الرسوم
-                refundStmt.setDouble(1, refundAmount);
-                refundStmt.setInt(2, getCurrentUserId());
-                if (refundStmt.executeUpdate() <= 0) {
-                    conn.rollback();
-                    return false;
-                }
-
-                conn.commit(); // تأكيد المعاملة
-                return true;
-            } catch (SQLException e) {
-                System.err.println("Error canceling reservation: " + e.getMessage());
-                return false;
-            }
+            out.println("END_OF_RESERVATIONS");
         }
         private double calculateRefund(int reservationId) {
             String sql = "SELECT fee FROM reservations WHERE id = ? AND reserved_at > CURRENT_TIMESTAMP";
@@ -488,49 +454,46 @@ public class ParkingServer {
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots);
             out.println("END_OF_SPOTS");
-
             if (availableSpots.equals("No parking spots available.")) {
                 return;
             }
-
             try {
                 // استقبال البيانات المشفرة من العميل
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
-
                 // استلام الشهادة من العميل
                 String encodedCertificate = in.readLine();
                 if (!verifyCertificate(encodedCertificate)) {
                     out.println(AESUtils.encrypt("Error: Invalid certificate."));
                     return;
                 }
-
                 // فك تشفير البيانات باستخدام AES
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
-
                 // التحقق من التوقيع الرقمي باستخدام RSA
                 String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
-
                 if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
                 }
-
                 // تحويل الوقت من String إلى LocalDateTime
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
                 double fee = calculateFee(start, end);
-
                 // إرسال الرسوم المشفرة باستخدام RSA
                 String encryptedFee = RSAUtils.encrypt(String.valueOf(fee), publicKey);
                 out.println(encryptedFee);
-
+                // استقبال الشهادة الرقمية لتوثيق الدفع
+                String encodedPaymentCertificate = in.readLine();
+                if (!verifyCertificate(encodedPaymentCertificate)) {
+                    out.println(AESUtils.encrypt("Error: Invalid certificate for payment."));
+                    return;
+                }
                 // استقبال توقيع الدفع من العميل
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
@@ -538,13 +501,11 @@ public class ParkingServer {
                     out.println(AESUtils.encrypt("Error: Invalid payment confirmation."));
                     return;
                 }
-
                 // التحقق من الرصيد
                 if (!deductUserBalance(fee)) {
                     out.println(AESUtils.encrypt("Error: Insufficient balance."));
                     return;
                 }
-
                 // إرسال رسالة الدفع الناجحة
                 String paymentSuccessMessage = "Payment successful!";
                 String encryptedPaymentSuccessMessage = RSAUtils.encrypt(paymentSuccessMessage, publicKey);
@@ -560,9 +521,9 @@ public class ParkingServer {
 
                     // إدخال الحجز في قاعدة البيانات مع التوقيع الرقمي للحجز والدفع
                     String insertReservationWithSignatures = """
-        INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
-        VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
-        """;
+INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
+VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
+""";
 
                     try (Connection conn = DriverManager.getConnection(DB_URL);
                          PreparedStatement stmt = conn.prepareStatement(insertReservationWithSignatures)) {
@@ -746,6 +707,38 @@ public class ParkingServer {
                 System.err.println("Client certificate is not valid.");
                 out.println(AESUtils.encrypt("Invalid certificate."));
                 return;
+            }
+        }
+        private boolean cancelReservation(int reservationId, double refundAmount) {
+            String sqlDelete = "DELETE FROM reservations WHERE id = ?";
+            String sqlRefund = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement deleteStmt = conn.prepareStatement(sqlDelete);
+                 PreparedStatement refundStmt = conn.prepareStatement(sqlRefund)) {
+
+                conn.setAutoCommit(false); // بدء معاملة
+
+                // حذف الحجز
+                deleteStmt.setInt(1, reservationId);
+                if (deleteStmt.executeUpdate() <= 0) {
+                    conn.rollback();
+                    return false;
+                }
+
+                // إعادة نصف الرسوم
+                refundStmt.setDouble(1, refundAmount);
+                refundStmt.setInt(2, getCurrentUserId());
+                if (refundStmt.executeUpdate() <= 0) {
+                    conn.rollback();
+                    return false;
+                }
+
+                conn.commit(); // تأكيد المعاملة
+                return true;
+            } catch (SQLException e) {
+                System.err.println("Error canceling reservation: " + e.getMessage());
+                return false;
             }
         }
     }
