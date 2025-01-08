@@ -133,7 +133,6 @@ public class ParkingServer {
                 return false;
             }
         }
-
         private void handleRegister() throws IOException {
             String fullName = in.readLine();
             String userType = in.readLine();
@@ -207,7 +206,6 @@ public class ParkingServer {
                 out.println("Registration failed!");
             }
         }
-
         private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword, double walletBalance) {
             try {
                 System.out.println("Encrypted data to be stored:");
@@ -239,7 +237,6 @@ public class ParkingServer {
                 return false;
             }
         }
-
         private boolean verifyCertificate(String encodedCertificate) {
             try {
                 // تحويل الشهادة من Base64 إلى تنسيق بايت
@@ -268,7 +265,6 @@ public class ParkingServer {
                 return false;
             }
         }
-
         private void handleLogin() throws IOException {
             System.out.println("Handling login...");
             String fullName = in.readLine();
@@ -300,7 +296,6 @@ public class ParkingServer {
                 out.println("Login failed! Error verifying certificate.");
             }
         }
-
         private boolean loginUser(String fullName, String rawPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
