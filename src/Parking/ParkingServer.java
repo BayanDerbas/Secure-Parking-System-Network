@@ -58,9 +58,6 @@ public class ParkingServer {
                         case "view_reservations":
                             handleViewReservations();
                             break;
-                        case "cancel_reservation": // الحالة الجديدة
-                            handleCancelReservation();
-                            break;
                         default:
                             out.println(AESUtils.encrypt("Invalid operation."));
                             break;
@@ -136,6 +133,7 @@ public class ParkingServer {
                 return false;
             }
         }
+
         private void handleRegister() throws IOException {
             String fullName = in.readLine();
             String userType = in.readLine();
@@ -209,6 +207,7 @@ public class ParkingServer {
                 out.println("Registration failed!");
             }
         }
+
         private boolean registerUser(String fullName, String userType, String phone, String carPlate, String encryptedPassword, double walletBalance) {
             try {
                 System.out.println("Encrypted data to be stored:");
@@ -240,6 +239,7 @@ public class ParkingServer {
                 return false;
             }
         }
+
         private boolean verifyCertificate(String encodedCertificate) {
             try {
                 // تحويل الشهادة من Base64 إلى تنسيق بايت
@@ -268,6 +268,7 @@ public class ParkingServer {
                 return false;
             }
         }
+
         private void handleLogin() throws IOException {
             System.out.println("Handling login...");
             String fullName = in.readLine();
@@ -299,6 +300,7 @@ public class ParkingServer {
                 out.println("Login failed! Error verifying certificate.");
             }
         }
+
         private boolean loginUser(String fullName, String rawPassword) {
             String sql = "SELECT password FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -377,14 +379,15 @@ public class ParkingServer {
         }
         private void handleViewReservations() throws Exception {
             String sql = """
-    SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-    FROM reservations r
-    JOIN parking_spots ps ON r.parking_spot_id = ps.id
-    WHERE r.user_id = ?
-    ORDER BY r.reserved_at;
+        SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
+        ORDER BY r.reserved_at;
     """;
 
             Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
+            List<String> reservationsList = new ArrayList<>(); // قائمة لتخزين جميع الحجوزات
 
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -400,10 +403,15 @@ public class ParkingServer {
 
                     String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
 
-                    // التحقق من عدم إرسال نفس الحجز مرتين
-                    if (!uniqueReservations.contains(data)) {
-                        uniqueReservations.add(data); // إضافة الحجز إلى المجموعة
-                        out.println(index + ". " + data); // إرسال النص مباشرة
+                    // إضافة الحجز إلى القائمة قبل التحقق من التكرار
+                    reservationsList.add(data);
+                }
+
+                // الآن التحقق من التكرار
+                for (String reservation : reservationsList) {
+                    if (!uniqueReservations.contains(reservation)) {
+                        uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
+                        out.println(index + ". " + reservation); // إرسال الحجز الفريد
                         index++;
                     }
                 }
@@ -416,37 +424,6 @@ public class ParkingServer {
             }
 
             out.println("END_OF_RESERVATIONS");
-        }
-        private double calculateRefund(int reservationId) {
-            String sql = "SELECT fee FROM reservations WHERE id = ? AND reserved_at > CURRENT_TIMESTAMP";
-
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setInt(1, reservationId);
-
-                try (ResultSet rs = pstmt.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getDouble("fee") / 2; // إعادة نصف الرسوم
-                    }
-                }
-            } catch (SQLException e) {
-                System.err.println("Error calculating refund: " + e.getMessage());
-            }
-
-            return 0.0;
-        }
-        private boolean deductUserBalance(double amount) {
-            String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setDouble(1, amount);           // خصم المبلغ المطلوب
-                pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
-                pstmt.setDouble(3, amount);           // التأكد من وجود رصيد كافٍ
-                return pstmt.executeUpdate() > 0;     // التحقق من نجاح الخصم
-            } catch (SQLException e) {
-                System.err.println("Error deducting user balance: " + e.getMessage());
-                return false; // في حالة حدوث خطأ أو عدم كفاية الرصيد
-            }
         }
         private void handleReserveSpot() throws Exception {
             String availableSpots = getAvailableParkingSpots();
@@ -609,6 +586,19 @@ VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
             }
             return false;
         }
+        private boolean deductUserBalance(double amount) {
+            String sql = "UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setDouble(1, amount);           // خصم المبلغ المطلوب
+                pstmt.setInt(2, getCurrentUserId());  // تحديد المستخدم الحالي
+                pstmt.setDouble(3, amount);           // التأكد من وجود رصيد كافٍ
+                return pstmt.executeUpdate() > 0;     // التحقق من نجاح الخصم
+            } catch (SQLException e) {
+                System.err.println("Error deducting user balance: " + e.getMessage());
+                return false; // في حالة حدوث خطأ أو عدم كفاية الرصيد
+            }
+        }
         private double calculateFee(LocalDateTime start, LocalDateTime end) {
             Duration duration = Duration.between(start, end);
             long durationHours = duration.toHours();
@@ -618,126 +608,6 @@ VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
             }
 
             return durationHours * 10.0; // الرسوم 10 وحدات لكل ساعة
-        }
-        private void handleCancelReservation() throws Exception {
-            StringBuilder reservations = new StringBuilder();
-            String sqlFetch = """
-            SELECT r.id, ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-            FROM reservations r
-            JOIN parking_spots ps ON r.parking_spot_id = ps.id
-            WHERE r.user_id = ?
-            """;
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement fetchStmt = conn.prepareStatement(sqlFetch)) {
-                fetchStmt.setInt(1, getCurrentUserId());
-                ResultSet rs = fetchStmt.executeQuery();
-                int index = 1;
-                Map<Integer, Integer> reservationMap = new HashMap<>();
-                while (rs.next()) {
-                    int reservationId = rs.getInt("id");
-                    int spotNumber = rs.getInt("spot_number");
-                    String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
-                    String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
-                    double fee = rs.getDouble("fee");
-                    reservationMap.put(index, reservationId);
-                    String data = index + ". Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: " + fee + ")";
-                    String encryptedData = AESUtils.encrypt(data);
-                    reservations.append(encryptedData).append("\n");
-                    index++;
-                }
-                if (reservations.length() > 0) {
-                    out.println(reservations.toString().trim());
-                } else {
-                    out.println(AESUtils.encrypt("No reservations found."));
-                }
-                out.println(AESUtils.encrypt("END_OF_RESERVATIONS"));
-                if (reservationMap.isEmpty()) return;
-                String encryptedNumber = in.readLine();
-                int reservationNumber = Integer.parseInt(AESUtils.decrypt(encryptedNumber));
-                // استلام توقيع الرقم
-                String receivedSignature = in.readLine();
-                PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
-                // التحقق من التوقيع
-                if (!DigitalSignatureUtil.verifyDigitalSignature(String.valueOf(reservationNumber), receivedSignature, publicKey)) {
-                    out.println(AESUtils.encrypt("Error: Invalid signature."));
-                    return;
-                }
-                if (!reservationMap.containsKey(reservationNumber)) {
-                    out.println(AESUtils.encrypt("Invalid reservation number."));
-                    return;
-                }
-                int reservationId = reservationMap.get(reservationNumber);
-                double refundAmount = calculateRefund(reservationId);
-                if (refundAmount > 0) {
-                    // تحميل المفتاح العام للعميل لتشفير مبلغ الاسترداد
-                    PublicKey clientPublicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
-                    String encryptedRefund = RSAUtils.encrypt(String.valueOf(refundAmount), clientPublicKey); // التشفير بالمفتاح العام
-                    out.println(encryptedRefund);
-                    // توقيع مبلغ الاسترداد بالمفتاح الخاص للخادم
-                    PrivateKey serverPrivateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-                    String refundSignature = DigitalSignatureUtil.generateDigitalSignature(String.valueOf(refundAmount), serverPrivateKey);
-                    out.println(refundSignature);
-                    // إلغاء الحجز
-                    if (cancelReservation(reservationId, refundAmount)) {
-                        out.println(AESUtils.encrypt("Reservation canceled successfully, and the refund was processed."));
-                    } else {
-                        out.println(AESUtils.encrypt("Failed to cancel the reservation."));
-                    }
-                } else {
-                    out.println(AESUtils.encrypt("No refund applicable for this reservation."));
-                }
-            } catch (Exception e) {
-                System.err.println("Error handling cancellation: " + e.getMessage());
-                out.println(AESUtils.encrypt("An error occurred. Please try again."));
-            }
-            System.out.println("........................Digital Certificate........................");
-            // التحقق من شهادة العميل بعد كل العمليات
-            String encodedCertificate = in.readLine(); // استلام الشهادة المشفرة Base64
-            byte[] certificateBytes = Base64.getDecoder().decode(encodedCertificate);
-            CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
-            X509Certificate clientCertificate = (X509Certificate) certFactory.generateCertificate(new ByteArrayInputStream(certificateBytes));
-            PublicKey clientPublicKey = clientCertificate.getPublicKey();
-            // تحقق من صحة الشهادة
-            try {
-                clientCertificate.checkValidity(); // التأكد من أن الشهادة صالحة
-                System.out.println("Client certificate is valid.");
-            } catch (CertificateException e) {
-                System.err.println("Client certificate is not valid.");
-                out.println(AESUtils.encrypt("Invalid certificate."));
-                return;
-            }
-        }
-        private boolean cancelReservation(int reservationId, double refundAmount) {
-            String sqlDelete = "DELETE FROM reservations WHERE id = ?";
-            String sqlRefund = "UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?";
-
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement deleteStmt = conn.prepareStatement(sqlDelete);
-                 PreparedStatement refundStmt = conn.prepareStatement(sqlRefund)) {
-
-                conn.setAutoCommit(false); // بدء معاملة
-
-                // حذف الحجز
-                deleteStmt.setInt(1, reservationId);
-                if (deleteStmt.executeUpdate() <= 0) {
-                    conn.rollback();
-                    return false;
-                }
-
-                // إعادة نصف الرسوم
-                refundStmt.setDouble(1, refundAmount);
-                refundStmt.setInt(2, getCurrentUserId());
-                if (refundStmt.executeUpdate() <= 0) {
-                    conn.rollback();
-                    return false;
-                }
-
-                conn.commit(); // تأكيد المعاملة
-                return true;
-            } catch (SQLException e) {
-                System.err.println("Error canceling reservation: " + e.getMessage());
-                return false;
-            }
         }
     }
 }

@@ -34,7 +34,6 @@ public class DigitalCertificateUtils {
     // توليد CSR باستخدام BouncyCastle
     public static String generateCSR(KeyPair keyPair, String distinguishedName) throws Exception {
         X500Name subject = new X500Name(distinguishedName);
-
         // تحويل المفتاح العام إلى SubjectPublicKeyInfo
         SubjectPublicKeyInfo subjectPublicKeyInfo = SubjectPublicKeyInfo.getInstance(keyPair.getPublic().getEncoded());
 
@@ -100,25 +99,5 @@ public class DigitalCertificateUtils {
         try (FileOutputStream fos = new FileOutputStream(filePath)) {
             fos.write(certificate.getEncoded());
         }
-    }
-    public static void main(String[] args) throws Exception {
-        // توليد مفتاح خاص وعام للـ CA
-        KeyPair caKeyPair = generateKeyPair();
-        // توليد مفتاح خاص وعام للمستخدم
-        KeyPair userKeyPair = generateKeyPair();
-        // فرضًا تم توليد CSR وتوقيعه بنجاح
-        String caDistinguishedName = "CN=MyTrustedCA, O=CAOrg, C=US";
-        String csr = generateCSR(userKeyPair, "CN=John Doe, O=MyCompany, C=US");
-        X509Certificate signedCertificate = signCSR(csr, caKeyPair, caDistinguishedName);
-        // حفظ الشهادة في ملف
-        saveCertificateToFile(signedCertificate, "C:\\Users\\ahmad\\Documents\\signedCertificate.cer");
-        saveCertificateToFile(signedCertificate, "C:\\Users\\ahmad\\Documents\\signedCertificate.crt");
-        // طباعة التفاصيل
-        System.out.println("Subject: " + signedCertificate.getSubjectDN());
-        System.out.println("Issuer: " + signedCertificate.getIssuerDN());
-        System.out.println("Valid From: " + signedCertificate.getNotBefore());
-        System.out.println("Valid Until: " + signedCertificate.getNotAfter());
-        System.out.println("Serial Number: " + signedCertificate.getSerialNumber());
-        System.out.println("Signature Algorithm: " + signedCertificate.getSigAlgName());
     }
 }

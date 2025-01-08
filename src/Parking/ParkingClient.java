@@ -132,8 +132,7 @@ public class ParkingClient {
         while (true) {
             System.out.println("1. Reserve a parking spot");
             System.out.println("2. View your reservations");
-            System.out.println("3. Cancel a reservation"); // خيار جديد
-            System.out.println("4. Logout");
+            System.out.println("3. Logout");
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
@@ -141,8 +140,7 @@ public class ParkingClient {
             switch (choice) {
                 case 1 -> handleReserveSpot(out, in, scanner, fullName);  // تمرير fullName هنا
                 case 2 -> handleViewReservations(out, in,fullName);
-                case 3 -> handleCancelReservation(out, in, scanner,fullName); // استدعاء دالة الإلغاء
-                case 4 -> {
+                case 3 -> {
                     System.out.println("Logging out...");
                     return;
                 }
@@ -221,8 +219,8 @@ public class ParkingClient {
             }
             // إرسال الشهادة مع تأكيد الدفع
             System.out.println("........................Digital Certificate for Payment Verification........................");
-             certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
-             certificateFile = new File(certificatePath);
+            certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+            certificateFile = new File(certificatePath);
             if (certificateFile.exists()) {
                 // قراءة الشهادة من الملف
                 byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
@@ -251,71 +249,6 @@ public class ParkingClient {
             }
         } catch (Exception e) {
             System.err.println("Error during reservation: " + e.getMessage());
-        }
-    }
-    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner,String fullName) throws Exception {
-        out.println("cancel_reservation"); // إرسال أمر الإلغاء للخادم
-        System.out.println("Your reservations:");
-        StringBuilder reservations = new StringBuilder();
-        String line;
-        while (true) {
-            line = AESUtils.decrypt(in.readLine()); // استقبال البيانات بشكل مشفر
-            if (line.equals("END_OF_RESERVATIONS")) break;
-            reservations.append(line).append("\n");
-        }
-        System.out.println(reservations.toString().trim());
-        if (reservations.toString().trim().equals("No reservations found.")) {
-            System.out.println("You have no reservations to cancel.");
-            return;
-        }
-        try {
-            System.out.print("Enter the reservation number to cancel: ");
-            int reservationNumber = scanner.nextInt();
-            scanner.nextLine(); // استهلاك السطر المتبقي
-            // إرسال الرقم المشفر
-            out.println(AESUtils.encrypt(String.valueOf(reservationNumber)));
-            // تحميل المفتاح الخاص لتوقيع البيانات
-            PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-            // توقيع الرقم المراد إلغاؤه
-            String signedData = DigitalSignatureUtil.generateDigitalSignature(String.valueOf(reservationNumber), privateKey);
-            out.println(signedData); // إرسال التوقيع للخادم
-            System.out.println("........................Digital Certificate........................");
-            // إضافة الشهادة الرقمية
-            try {
-                // استخدام fullName لتحديد مسار الشهادة
-                String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
-                File certificateFile = new File(certificatePath);
-                if (certificateFile.exists()) {
-                    // قراءة الشهادة من الملف
-                    byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
-                    String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-                    System.out.println("Certificate content (Base64 encoded):");
-                    System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-                    out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
-                } else {
-                    System.err.println("Certificate file not found.");
-                }
-            } catch (IOException e) {
-                System.err.println("Error reading the certificate: " + e.getMessage());
-            }
-            // استقبال مبلغ الاسترداد المشفر
-            String encryptedRefund = in.readLine();
-            PrivateKey clientPrivateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
-            String refundAmount = RSAUtils.decrypt(encryptedRefund, clientPrivateKey);
-            System.out.println("Refund Amount: " + refundAmount);
-            // استقبال توقيع مبلغ الاسترداد من الخادم
-            String refundSignature = in.readLine();
-            // التحقق من التوقيع
-            PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
-            if (!DigitalSignatureUtil.verifyDigitalSignature(refundAmount, refundSignature, publicKey)) {
-                System.err.println("Error: Invalid refund signature.");
-                return;
-            }
-            // استقبال الرسالة النهائية من الخادم
-            String response = AESUtils.decrypt(in.readLine());
-            System.out.println(response);
-        } catch (Exception e) {
-            System.err.println("Error during cancellation: " + e.getMessage());
         }
     }
     private static void handleViewReservations(PrintWriter out, BufferedReader in, String fullName) throws IOException {
