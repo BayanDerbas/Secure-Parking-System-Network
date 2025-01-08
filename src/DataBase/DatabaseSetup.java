@@ -1,11 +1,9 @@
 package DataBase;
-
 import Utils.AESUtils;
 import Utils.RSAUtils;
 
 import java.sql.*;
 import java.util.*;
-
 public class DatabaseSetup {
     private static final String DB_URL = "jdbc:sqlite:parking_system.db";
     public static void main(String[] args) {
