@@ -133,11 +133,92 @@ public class ParkingServer {
                 return false;
             }
         }
+        private boolean verifyCertificate(String encodedCertificate) {
+            try {
+                // تحويل الشهادة من Base64 إلى تنسيق بايت
+                byte[] certificateBytes = Base64.getDecoder().decode(encodedCertificate);
+                // تحميل الشهادة
+                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+                ByteArrayInputStream certStream = new ByteArrayInputStream(certificateBytes);
+                X509Certificate certificate = (X509Certificate) certificateFactory.generateCertificate(certStream);
+
+                // التحقق من صحة الشهادة
+                certificate.checkValidity();
+
+                // إضافة تفاصيل التوثيق:
+                String verificationKey = "CA Public Key"; // المفتاح العام لـ CA يمكن استبداله بأي مفتاح يتم استخدامه في التحقق
+                LocalDateTime verificationTime = LocalDateTime.now();
+
+                System.out.println("Certificate is valid.");
+                System.out.println("Verified using key: " + verificationKey);
+                // عند إرسال الشهادة:
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                String formattedDateTime = LocalDateTime.now().format(formatter);
+                System.out.println("Verification timestamp: " + formattedDateTime); // التاريخ الذي تم فيه التحقق
+                return true;
+            } catch (CertificateException e) {
+                System.err.println("Error verifying certificate: " + e.getMessage());
+                return false;
+            }
+        }
+        private void handleLogin() throws IOException {
+            System.out.println("Handling login...");
+            String fullName = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
+            System.out.println("Received full name: " + fullName);
+            String encryptedPassword = in.readLine();
+
+            // فك تشفير كلمة المرور
+            String rawPassword;
+            try {
+                rawPassword = AESUtils.decrypt(encryptedPassword);
+                System.out.println("Decrypted password: " + rawPassword);
+            } catch (Exception e) {
+                System.err.println("Error decrypting password: " + e.getMessage());
+                out.println("Login failed!");
+                return;
+            }
+
+            // استلام الشهادة
+            String encodedCertificate = in.readLine();
+            if (verifyCertificate(encodedCertificate)) {
+                boolean isLoggedIn = loginUser(fullName, rawPassword);
+                if (isLoggedIn) {
+                    System.out.println("Login successful for user: " + fullName);
+                    currentUser = fullName; // تحديث المستخدم الحالي
+                    out.println("Login successful!");
+                } else {
+                    System.out.println("Login failed for user: " + fullName);
+                    out.println("Login failed!");
+                }
+            } else {
+                out.println("Login failed! Error verifying certificate.");
+            }
+        }
+        private boolean loginUser(String fullName, String rawPassword) {
+            String sql = "SELECT password FROM users WHERE full_name = ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = SecurityUtils.prepareSafeStatement(conn, sql, fullName)) {  // استخدام Safe Statement
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    String storedEncryptedPassword = rs.getString("password");
+                    // تشفير كلمة المرور للمقارنة
+                    String encryptedPassword = AESUtils.encrypt(rawPassword);
+                    System.out.println("Stored Encrypted Password: " + storedEncryptedPassword);
+                    System.out.println("Re-encrypted Password: " + encryptedPassword);
+                    return storedEncryptedPassword.equals(encryptedPassword);
+                }
+            } catch (SQLException e) {
+                System.err.println("Error during login: " + e.getMessage());
+            } catch (Exception e) {
+                System.err.println("Error encrypting password for comparison: " + e.getMessage());
+            }
+            return false;
+        }
         private void handleRegister() throws IOException {
-            String fullName = in.readLine();
-            String userType = in.readLine();
-            String phoneNumber = in.readLine();
-            String carPlate = in.readLine();
+            String fullName = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
+            String userType = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
+            String phoneNumber = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
+            String carPlate = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
             String encryptedPassword = in.readLine();
             double walletBalance = Double.parseDouble(in.readLine());
 
@@ -210,7 +291,7 @@ public class ParkingServer {
             try {
                 System.out.println("Encrypted data to be stored:");
                 System.out.println("Password: " + encryptedPassword);
-                System.out.println("Phone: ");
+                System.out.println("Phone: " + phone);
                 System.out.println("User Type: " + userType);
                 System.out.println("Car Plate: " + carPlate);
                 System.out.println("Wallet Balance: " + walletBalance);
@@ -221,14 +302,7 @@ public class ParkingServer {
 
             String sql = "INSERT INTO users (full_name, user_type, phone_number, car_plate, password, wallet_balance) VALUES (?, ?, ?, ?, ?, ?)";
             try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, fullName);
-                pstmt.setString(2, userType);
-                pstmt.setString(3, phone);
-                pstmt.setString(4, carPlate);
-                pstmt.setString(5, encryptedPassword);
-                pstmt.setDouble(6, walletBalance);
-
+                 PreparedStatement pstmt = SecurityUtils.prepareSafeStatement(conn, sql, fullName, userType, phone, carPlate, encryptedPassword, walletBalance)) {  // استخدام Safe Statement
                 pstmt.executeUpdate();
                 System.out.println("User registered successfully!");
                 return true;
@@ -236,90 +310,6 @@ public class ParkingServer {
                 System.err.println("Error during user registration: " + e.getMessage());
                 return false;
             }
-        }
-        private boolean verifyCertificate(String encodedCertificate) {
-            try {
-                // تحويل الشهادة من Base64 إلى تنسيق بايت
-                byte[] certificateBytes = Base64.getDecoder().decode(encodedCertificate);
-                // تحميل الشهادة
-                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
-                ByteArrayInputStream certStream = new ByteArrayInputStream(certificateBytes);
-                X509Certificate certificate = (X509Certificate) certificateFactory.generateCertificate(certStream);
-
-                // التحقق من صحة الشهادة
-                certificate.checkValidity();
-
-                // إضافة تفاصيل التوثيق:
-                String verificationKey = "CA Public Key"; // المفتاح العام لـ CA يمكن استبداله بأي مفتاح يتم استخدامه في التحقق
-                LocalDateTime verificationTime = LocalDateTime.now();
-
-                System.out.println("Certificate is valid.");
-                System.out.println("Verified using key: " + verificationKey);
-                // عند إرسال الشهادة:
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-                String formattedDateTime = LocalDateTime.now().format(formatter);
-                System.out.println("Verification timestamp: " + formattedDateTime); // التاريخ الذي تم فيه التحقق
-                return true;
-            } catch (CertificateException e) {
-                System.err.println("Error verifying certificate: " + e.getMessage());
-                return false;
-            }
-        }
-        private void handleLogin() throws IOException {
-            System.out.println("Handling login...");
-            String fullName = in.readLine();
-            System.out.println("Received full name: " + fullName);
-            String encryptedPassword = in.readLine();
-            // فك تشفير كلمة المرور
-            String rawPassword;
-            try {
-                rawPassword = AESUtils.decrypt(encryptedPassword);
-                System.out.println("Decrypted password: " + rawPassword);
-            } catch (Exception e) {
-                System.err.println("Error decrypting password: " + e.getMessage());
-                out.println("Login failed!");
-                return;
-            }
-            // استلام الشهادة
-            String encodedCertificate = in.readLine();
-            if (verifyCertificate(encodedCertificate)) {
-                boolean isLoggedIn = loginUser(fullName, rawPassword);
-                if (isLoggedIn) {
-                    System.out.println("Login successful for user: " + fullName);
-                    currentUser = fullName; // تحديث المستخدم الحالي
-                    out.println("Login successful!");
-                } else {
-                    System.out.println("Login failed for user: " + fullName);
-                    out.println("Login failed!");
-                }
-            } else {
-                out.println("Login failed! Error verifying certificate.");
-            }
-        }
-        private boolean loginUser(String fullName, String rawPassword) {
-            String sql = "SELECT password FROM users WHERE full_name = ?";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-
-                pstmt.setString(1, fullName);
-                ResultSet rs = pstmt.executeQuery();
-
-                if (rs.next()) {
-                    String storedEncryptedPassword = rs.getString("password");
-
-                    // Encrypt the raw password for comparison
-                    String encryptedPassword = AESUtils.encrypt(rawPassword);
-                    System.out.println("Stored Encrypted Password: " + storedEncryptedPassword);
-                    System.out.println("Re-encrypted Password: " + encryptedPassword);
-
-                    return storedEncryptedPassword.equals(encryptedPassword);
-                }
-            } catch (SQLException e) {
-                System.err.println("Error during login: " + e.getMessage());
-            } catch (Exception e) {
-                System.err.println("Error encrypting password for comparison: " + e.getMessage());
-            }
-            return false;
         }
         private void viewAvailableParkingSpots() throws IOException {
             String availableSpots = getAvailableParkingSpots();
@@ -358,6 +348,12 @@ public class ParkingServer {
             // هنا يمكنك استخدام تاريخ الوقت الحالي بالصيغ المناسبة حسب قاعدة البيانات أو كما ترغب
             return java.time.LocalDateTime.now().toString(); // تعديل على الصيغة إذا لزم الأمر
         }
+        private boolean isValidTimeRange(String startTime, String endTime) {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            LocalDateTime start = LocalDateTime.parse(startTime, formatter);
+            LocalDateTime end = LocalDateTime.parse(endTime, formatter);
+            return !start.isBefore(LocalDateTime.now()) && !start.isAfter(end);
+        }
         private int getCurrentUserId() {
             String sql = "SELECT id FROM users WHERE full_name = ?";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -374,11 +370,11 @@ public class ParkingServer {
         }
         private void handleViewReservations() throws Exception {
             String sql = """
-        SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        WHERE r.user_id = ?
-        ORDER BY r.reserved_at;
+    SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+    FROM reservations r
+    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+    WHERE r.user_id = ?
+    ORDER BY r.reserved_at;
     """;
 
             Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
@@ -406,7 +402,7 @@ public class ParkingServer {
                 for (String reservation : reservationsList) {
                     if (!uniqueReservations.contains(reservation)) {
                         uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
-                        out.println(index + ". " + reservation); // إرسال الحجز الفريد
+                        out.println(SecurityUtils.sanitizeForXSS(index + ". " + reservation)); // إرسال الحجز الفريد مع حماية XSS
                         index++;
                     }
                 }
@@ -442,6 +438,13 @@ public class ParkingServer {
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
+
+                // التحقق من صحة التواريخ (اختياري: يمكنك تحسين هذه الطريقة حسب المتطلبات)
+                if (!isValidTimeRange(startTime, endTime)) {
+                    out.println(AESUtils.encrypt("Error: Invalid time range."));
+                    return;
+                }
+
                 // التحقق من التوقيع الرقمي باستخدام RSA
                 String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
@@ -450,20 +453,24 @@ public class ParkingServer {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
                 }
+
                 // تحويل الوقت من String إلى LocalDateTime
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
                 LocalDateTime start = LocalDateTime.parse(startTime, formatter);
                 LocalDateTime end = LocalDateTime.parse(endTime, formatter);
                 double fee = calculateFee(start, end);
+
                 // إرسال الرسوم المشفرة باستخدام RSA
                 String encryptedFee = RSAUtils.encrypt(String.valueOf(fee), publicKey);
                 out.println(encryptedFee);
+
                 // استقبال الشهادة الرقمية لتوثيق الدفع
                 String encodedPaymentCertificate = in.readLine();
                 if (!verifyCertificate(encodedPaymentCertificate)) {
                     out.println(AESUtils.encrypt("Error: Invalid certificate for payment."));
                     return;
                 }
+
                 // استقبال توقيع الدفع من العميل
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
@@ -471,11 +478,13 @@ public class ParkingServer {
                     out.println(AESUtils.encrypt("Error: Invalid payment confirmation."));
                     return;
                 }
+
                 // التحقق من الرصيد
                 if (!deductUserBalance(fee)) {
                     out.println(AESUtils.encrypt("Error: Insufficient balance."));
                     return;
                 }
+
                 // إرسال رسالة الدفع الناجحة
                 String paymentSuccessMessage = "Payment successful!";
                 String encryptedPaymentSuccessMessage = RSAUtils.encrypt(paymentSuccessMessage, publicKey);
@@ -491,9 +500,9 @@ public class ParkingServer {
 
                     // إدخال الحجز في قاعدة البيانات مع التوقيع الرقمي للحجز والدفع
                     String insertReservationWithSignatures = """
-INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
-VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
-""";
+    INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
+    VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
+    """;
 
                     try (Connection conn = DriverManager.getConnection(DB_URL);
                          PreparedStatement stmt = conn.prepareStatement(insertReservationWithSignatures)) {

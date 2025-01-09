@@ -49,13 +49,17 @@ public class ParkingClient {
 
         // قراءة البيانات
         System.out.print("Enter your full name: ");
-        out.println(scanner.nextLine());
+        String fullName = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
+        out.println(fullName);
         System.out.print("Enter your user type (Visitor/Employee): ");
-        out.println(scanner.nextLine());
+        String userType = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
+        out.println(userType);
         System.out.print("Enter your phone number: ");
-        out.println(scanner.nextLine());
+        String phoneNumber = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
+        out.println(phoneNumber);
         System.out.print("Enter your car plate: ");
-        out.println(scanner.nextLine());
+        String carPlate = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
+        out.println(carPlate);
         System.out.print("Enter your password: ");
         String rawPassword = scanner.nextLine();
 
@@ -78,9 +82,10 @@ public class ParkingClient {
         // طلب الشهادة الرقمية
         System.out.println("Do you want to create a digital certificate? (yes/no): ");
         if (scanner.nextLine().equalsIgnoreCase("yes")) {
-            System.out.print("Enter distinguished name for certificate (e.g., CN=John Doe, OU=IT, O=Company, C=US):");
+            System.out.print("Enter distinguished name for certificate (e.g., CN=John Doe, OU=IT, O=Company, C=US): ");
+            String distinguishedName = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
             out.println("certificate");
-            out.println(scanner.nextLine());
+            out.println(distinguishedName);
             System.out.println("Server response: " + in.readLine());
         }
     }
@@ -88,7 +93,7 @@ public class ParkingClient {
         System.out.println("Sending login request to the server...");
         out.println("login");
         System.out.print("Enter your full name: ");
-        String fullName = scanner.nextLine();
+        String fullName = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
         out.println(fullName);
         System.out.println("Sent full name: " + fullName);
         System.out.print("Enter your password: ");
@@ -97,6 +102,7 @@ public class ParkingClient {
         out.println(encryptedPassword);
         System.out.println("Sent encrypted password.");
         System.out.println("........................Digital Certificate........................");
+
         // إرسال الشهادة
         String certificatePath = "C:\\Users\\ahmad\\Documents\\" + fullName + "_certificate.crt";
         File certificateFile = new File(certificatePath);
@@ -174,17 +180,23 @@ public class ParkingClient {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             System.out.print("Enter the start time (yyyy-MM-dd HH:mm): ");
             String startTimeInput = scanner.nextLine();
+            startTimeInput = SecurityUtils.sanitizeForXSS(startTimeInput); // حماية ضد XSS
             LocalDateTime startTime = parseDateTime(startTimeInput, formatter);
+
             System.out.print("Enter the end time (yyyy-MM-dd HH:mm): ");
             String endTimeInput = scanner.nextLine();
+            endTimeInput = SecurityUtils.sanitizeForXSS(endTimeInput); // حماية ضد XSS
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
+
             // تشفير البيانات المدخلة باستخدام AES قبل إرسالها
             String encryptedSpotNumber = AESUtils.encrypt(String.valueOf(spotNumber));
             String encryptedStartTime = AESUtils.encrypt(startTime.format(formatter));
             String encryptedEndTime = AESUtils.encrypt(endTime.format(formatter));
+
             out.println(encryptedSpotNumber);
             out.println(encryptedStartTime);
             out.println(encryptedEndTime);
+
             System.out.println("........................Digital Certificate........................");
             // استخدام fullName لتحديد مسار الشهادة
             String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
@@ -204,11 +216,13 @@ public class ParkingClient {
             String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
             String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
+
             // استقبال الرسوم المشفرة من الخادم (بـ RSA)
             String encryptedFee = in.readLine();
             String decryptedFee = RSAUtils.decrypt(encryptedFee, privateKey);
             double fee = Double.parseDouble(decryptedFee);
             System.out.println("The reservation fee is: " + fee);
+
             // تأكيد الدفع باستخدام RSA
             System.out.print("Do you want to proceed with the payment? (yes/no): ");
             String confirmation = scanner.nextLine().trim().toLowerCase();
@@ -217,12 +231,12 @@ public class ParkingClient {
                 System.out.println("Reservation canceled.");
                 return;
             }
+
             // إرسال الشهادة مع تأكيد الدفع
             System.out.println("........................Digital Certificate for Payment Verification........................");
             certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
             certificateFile = new File(certificatePath);
             if (certificateFile.exists()) {
-                // قراءة الشهادة من الملف
                 byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
                 String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
                 System.out.println("Certificate content (Base64 encoded):");
@@ -231,10 +245,12 @@ public class ParkingClient {
             } else {
                 System.err.println("Certificate file not found.");
             }
+
             // إرسال توقيع تأكيد الدفع باستخدام RSA
             String paymentConfirmation = "confirm_payment";
             String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
             out.println(paymentSignature);
+
             // استقبال الرد النهائي من الخادم
             String encryptedResponse = in.readLine();
             String decryptedResponse = RSAUtils.decrypt(encryptedResponse, privateKey);
@@ -263,6 +279,7 @@ public class ParkingClient {
             if (line == null || line.equals("END_OF_RESERVATIONS")) { // انتهاء البيانات
                 break;
             }
+            line = SecurityUtils.sanitizeForXSS(line); // حماية ضد XSS
             if (!reservations.contains(line)) { // التحقق من عدم التكرار
                 reservations.add(line);
                 System.out.println(line);
