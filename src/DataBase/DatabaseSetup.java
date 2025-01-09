@@ -48,48 +48,48 @@ public class DatabaseSetup {
                 System.out.println("Connected to the database!");
                 // إنشاء جدول المستخدمين
                 String createUsersTable = """
-                        CREATE TABLE IF NOT EXISTS users (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            full_name TEXT NOT NULL,
-                            user_type TEXT NOT NULL,
-                            phone_number TEXT NOT NULL,
-                            car_plate TEXT NOT NULL,
-                            password TEXT NOT NULL,
-                            wallet_balance REAL DEFAULT 0.0
-                        );
-                        """;
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        full_name TEXT NOT NULL,
+                        user_type TEXT NOT NULL,
+                        phone_number TEXT NOT NULL,
+                        car_plate TEXT NOT NULL,
+                        password TEXT NOT NULL,
+                        wallet_balance REAL DEFAULT 0.0
+                    );
+                    """;
                 // إنشاء جدول مواقف السيارات
                 String createParkingSpotsTable = """
-                        CREATE TABLE IF NOT EXISTS parking_spots (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            spot_number INTEGER NOT NULL UNIQUE,
-                            is_reserved BOOLEAN NOT NULL DEFAULT 0
-                        );
-                        """;
+                    CREATE TABLE IF NOT EXISTS parking_spots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        spot_number INTEGER NOT NULL UNIQUE,
+                        is_reserved BOOLEAN NOT NULL DEFAULT 0
+                    );
+                    """;
                 // إنشاء جدول الحجوزات
                 String createReservationsTable = """
-                        CREATE TABLE IF NOT EXISTS reservations (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            parking_spot_id INTEGER NOT NULL,
-                            user_id INTEGER NOT NULL,
-                            reserved_at TEXT NOT NULL,
-                            reserved_until TEXT NOT NULL,
-                            fee REAL NOT NULL DEFAULT 0.0,
-                            digital_signature_reservation TEXT,  -- توقيع الحجز الرقمي
-                            digital_signature_payment TEXT,      -- توقيع الدفع الرقمي
-                            FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
-                            FOREIGN KEY (user_id) REFERENCES users(id)
-                        );
-                        """;
+                    CREATE TABLE IF NOT EXISTS reservations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        parking_spot_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        reserved_at TEXT NOT NULL,
+                        reserved_until TEXT NOT NULL,
+                        fee REAL NOT NULL DEFAULT 0.0,
+                        digital_signature_reservation TEXT,  -- توقيع الحجز الرقمي
+                        digital_signature_payment TEXT,      -- توقيع الدفع الرقمي
+                        FOREIGN KEY (parking_spot_id) REFERENCES parking_spots(id),
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    );
+                    """;
                 // إنشاء جدول الشهادات
                 String createCertificatesTable = """
-                            CREATE TABLE IF NOT EXISTS certificates (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    user_id INTEGER NOT NULL,
-                                    certificate TEXT NOT NULL,
-                                    FOREIGN KEY (user_id) REFERENCES users (id)
-                                );
-                        """;
+                        CREATE TABLE IF NOT EXISTS certificates (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                user_id INTEGER NOT NULL,
+                                certificate TEXT NOT NULL,
+                                FOREIGN KEY (user_id) REFERENCES users (id)
+                            );
+                    """;
                 // تنفيذ جمل إنشاء الجداول
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(createUsersTable);
@@ -100,12 +100,12 @@ public class DatabaseSetup {
                 }
                 // إضافة المواقف المبدئية
                 String insertInitialSpots = """
-                        INSERT INTO parking_spots (spot_number)
-                        VALUES 
-                            (1), (2), (3), (4), (5),
-                            (6), (7), (8), (9), (10)
-                        ON CONFLICT(spot_number) DO NOTHING;
-                        """;
+                    INSERT INTO parking_spots (spot_number)
+                    VALUES 
+                        (1), (2), (3), (4), (5),
+                        (6), (7), (8), (9), (10)
+                    ON CONFLICT(spot_number) DO NOTHING;
+                    """;
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute(insertInitialSpots);
                     System.out.println("Initial parking spots added successfully!");
@@ -140,8 +140,8 @@ public class DatabaseSetup {
     }
     private static void viewUsers(Connection conn) {
         String viewUsers = "SELECT * FROM users;";
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(viewUsers)) {
+        try (PreparedStatement pstmt = conn.prepareStatement(viewUsers);
+             ResultSet rs = pstmt.executeQuery()) {
             System.out.println("Users:");
             while (rs.next()) {
                 int id = rs.getInt("id");
@@ -206,15 +206,15 @@ public class DatabaseSetup {
     }
     private static void viewReservations(Connection conn) {
         String viewReservations = """
-        SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
-        FROM reservations r
-        JOIN parking_spots ps ON r.parking_spot_id = ps.id
-        JOIN users u ON r.user_id = u.id
-        ORDER BY r.reserved_at;
+    SELECT ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
+    FROM reservations r
+    JOIN parking_spots ps ON r.parking_spot_id = ps.id
+    JOIN users u ON r.user_id = u.id
+    ORDER BY r.reserved_at;
     """;
 
-        try (Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(viewReservations)) {
+        try (PreparedStatement pstmt = conn.prepareStatement(viewReservations);
+             ResultSet rs = pstmt.executeQuery()) {
             System.out.println("Reservations:");
 
             // استخدام قائمة لتخزين الحجوزات الفريدة
@@ -300,12 +300,19 @@ public class DatabaseSetup {
                 String deleteParkingSpotsData = "DELETE FROM parking_spots;";
                 String deleteReservationsData = "DELETE FROM reservations;";
 
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.executeUpdate(deleteUsersData);
-                    stmt.executeUpdate(deleteParkingSpotsData);
-                    stmt.executeUpdate(deleteReservationsData);
-                    System.out.println("All data has been deleted.");
+                try (PreparedStatement pstmt = conn.prepareStatement(deleteUsersData)) {
+                    pstmt.executeUpdate();
                 }
+
+                try (PreparedStatement pstmt = conn.prepareStatement(deleteParkingSpotsData)) {
+                    pstmt.executeUpdate();
+                }
+
+                try (PreparedStatement pstmt = conn.prepareStatement(deleteReservationsData)) {
+                    pstmt.executeUpdate();
+                }
+
+                System.out.println("All data has been deleted.");
             }
         } catch (SQLException e) {
             System.err.println("Error deleting data: " + e.getMessage());
@@ -318,12 +325,19 @@ public class DatabaseSetup {
                 String dropParkingSpotsTable = "DROP TABLE IF EXISTS parking_spots;";
                 String dropReservationsTable = "DROP TABLE IF EXISTS reservations;";
 
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute(dropReservationsTable);
-                    stmt.execute(dropParkingSpotsTable);
-                    stmt.execute(dropUsersTable);
-                    System.out.println("Tables dropped successfully!");
+                try (PreparedStatement pstmt = conn.prepareStatement(dropReservationsTable)) {
+                    pstmt.executeUpdate();
                 }
+
+                try (PreparedStatement pstmt = conn.prepareStatement(dropParkingSpotsTable)) {
+                    pstmt.executeUpdate();
+                }
+
+                try (PreparedStatement pstmt = conn.prepareStatement(dropUsersTable)) {
+                    pstmt.executeUpdate();
+                }
+
+                System.out.println("Tables dropped successfully!");
             }
         } catch (SQLException e) {
             System.err.println("Error dropping tables: " + e.getMessage());
