@@ -158,7 +158,6 @@ public class ParkingClient {
         // طلب عرض المواقف المتاحة
         out.println("reserve_spot");
         System.out.println("Available parking spots:");
-        // عرض المواقف المتاحة المستلمة من الخادم
         StringBuilder availableSpots = new StringBuilder();
         String line;
         while (true) {
@@ -180,12 +179,12 @@ public class ParkingClient {
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             System.out.print("Enter the start time (yyyy-MM-dd HH:mm): ");
             String startTimeInput = scanner.nextLine();
-            startTimeInput = SecurityUtils.sanitizeForXSS(startTimeInput); // حماية ضد XSS
+            startTimeInput = SecurityUtils.sanitizeForXSS(startTimeInput);
             LocalDateTime startTime = parseDateTime(startTimeInput, formatter);
 
             System.out.print("Enter the end time (yyyy-MM-dd HH:mm): ");
             String endTimeInput = scanner.nextLine();
-            endTimeInput = SecurityUtils.sanitizeForXSS(endTimeInput); // حماية ضد XSS
+            endTimeInput = SecurityUtils.sanitizeForXSS(endTimeInput);
             LocalDateTime endTime = parseDateTime(endTimeInput, formatter);
 
             // تشفير البيانات المدخلة باستخدام AES قبل إرسالها
@@ -197,20 +196,20 @@ public class ParkingClient {
             out.println(encryptedStartTime);
             out.println(encryptedEndTime);
 
+            // إرسال الشهادة الرقمية
             System.out.println("........................Digital Certificate........................");
-            // استخدام fullName لتحديد مسار الشهادة
             String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
             File certificateFile = new File(certificatePath);
             if (certificateFile.exists()) {
-                // قراءة الشهادة من الملف
                 byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
                 String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
                 System.out.println("Certificate content (Base64 encoded):");
-                System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-                out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
+                System.out.println(encodedCertificate);
+                out.println(encodedCertificate);
             } else {
                 System.err.println("Certificate file not found.");
             }
+
             // إنشاء التوقيع الرقمي وإرساله باستخدام RSA
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
             String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
@@ -234,14 +233,10 @@ public class ParkingClient {
 
             // إرسال الشهادة مع تأكيد الدفع
             System.out.println("........................Digital Certificate for Payment Verification........................");
-            certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
-            certificateFile = new File(certificatePath);
             if (certificateFile.exists()) {
                 byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
                 String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-                System.out.println("Certificate content (Base64 encoded):");
-                System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-                out.println(encodedCertificate); // إرسال الشهادة إلى الخادم مع تأكيد الدفع
+                out.println(encodedCertificate);
             } else {
                 System.err.println("Certificate file not found.");
             }
@@ -256,10 +251,9 @@ public class ParkingClient {
             String decryptedResponse = RSAUtils.decrypt(encryptedResponse, privateKey);
             System.out.println(decryptedResponse);
             if (decryptedResponse.equals("Payment successful!")) {
-                // استقبال رسالة الحجز من الخادم (مشفره بـ AES)
                 String encryptedReservationMessage = in.readLine();
                 String decryptedReservationMessage = AESUtils.decrypt(encryptedReservationMessage);
-                System.out.println(decryptedReservationMessage); // عرض رسالة الحجز الناجحة أو الخطأ
+                System.out.println(decryptedReservationMessage);
             } else {
                 System.out.println("Payment failed.");
             }
@@ -270,9 +264,26 @@ public class ParkingClient {
     private static void handleViewReservations(PrintWriter out, BufferedReader in, String fullName) throws IOException {
         // إرسال طلب عرض الحجوزات إلى الخادم
         out.println("view_reservations");
-        System.out.println("Your reservations:");
-        Set<String> reservations = new HashSet<>(); // استخدام مجموعة لمنع التكرار
 
+        // إرسال الشهادة الرقمية
+        System.out.println("Sending certificate to the server...");
+        String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+        File certificateFile = new File(certificatePath);
+        if (certificateFile.exists()) {
+            // قراءة الشهادة من الملف
+            byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+            String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+            System.out.println("Certificate content (Base64 encoded):");
+            System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
+            out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
+        } else {
+            System.err.println("Certificate file not found.");
+            return;
+        }
+
+        // الانتظار لعرض الحجوزات
+        Set<String> reservations = new HashSet<>(); // استخدام مجموعة لمنع التكرار
+        System.out.println("Your reservations:");
         String line;
         while (true) {
             line = in.readLine();
@@ -285,25 +296,7 @@ public class ParkingClient {
                 System.out.println(line);
             }
         }
-        System.out.println("........................Digital Certificate........................");
-
-        // إضافة الشهادة الرقمية قبل إرسال الطلب
-        try {
-            // قراءة الشهادة من الملف
-            String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
-            File certificateFile = new File(certificatePath);
-            if (certificateFile.exists()) {
-                byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
-                String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-                System.out.println("Certificate content (Base64 encoded):");
-                System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-                out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
-            } else {
-                System.err.println("Certificate file not found.");
-            }
-        } catch (IOException e) {
-            System.err.println("Error reading the certificate: " + e.getMessage());
-        }
+        System.out.println("........................End of Reservations........................");
     }
     private static LocalDateTime parseDateTime(String dateTimeInput, DateTimeFormatter formatter) {
         try {

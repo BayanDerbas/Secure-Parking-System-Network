@@ -99,6 +99,20 @@ public class ParkingServer {
             }
             return -1; // إذا لم يتم العثور على المستخدم
         }
+        private boolean checkCertificateExists(int userId) {
+            String sql = "SELECT COUNT(*) FROM certificates WHERE user_id = ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, userId);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    return rs.getInt(1) > 0; // إذا كان هناك سجل، الشهادة موجودة
+                }
+            } catch (SQLException e) {
+                System.err.println("Error checking certificate existence: " + e.getMessage());
+            }
+            return false;
+        }
         private boolean storeCertificate(int userId, String certificatePem, String publicKeyPem, String privateKeyPem) {
             String encryptedPrivateKey = null;
 
@@ -181,14 +195,19 @@ public class ParkingServer {
             // استلام الشهادة
             String encodedCertificate = in.readLine();
             if (verifyCertificate(encodedCertificate)) {
-                boolean isLoggedIn = loginUser(fullName, rawPassword);
-                if (isLoggedIn) {
-                    System.out.println("Login successful for user: " + fullName);
-                    currentUser = fullName; // تحديث المستخدم الحالي
-                    out.println("Login successful!");
+                int userId = getUserIdByFullName(fullName);
+                if (userId != -1 && checkCertificateExists(userId)) {
+                    boolean isLoggedIn = loginUser(fullName, rawPassword);
+                    if (isLoggedIn) {
+                        System.out.println("Login successful for user: " + fullName);
+                        currentUser = fullName; // تحديث المستخدم الحالي
+                        out.println("Login successful!");
+                    } else {
+                        System.out.println("Login failed for user: " + fullName);
+                        out.println("Login failed!");
+                    }
                 } else {
-                    System.out.println("Login failed for user: " + fullName);
-                    out.println("Login failed!");
+                    out.println("Login failed! Certificate not found.");
                 }
             } else {
                 out.println("Login failed! Error verifying certificate.");
@@ -369,77 +388,106 @@ public class ParkingServer {
             return -1;
         }
         private void handleViewReservations() throws Exception {
-            String sql = """
-    SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-    FROM reservations r
-    JOIN parking_spots ps ON r.parking_spot_id = ps.id
-    WHERE r.user_id = ?
-    ORDER BY r.reserved_at;
-    """;
+            // استلام الشهادة الرقمية من العميل
+            String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
 
-            Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
-            List<String> reservationsList = new ArrayList<>(); // قائمة لتخزين جميع الحجوزات
+            // التحقق من صحة الشهادة الرقمية
+            if (verifyCertificate(encodedCertificate)) {
+                int userId = getCurrentUserId();
+                System.out.println("User ID: " + userId);  // سجل الـ userId
 
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
-                stmt.setInt(1, getCurrentUserId());
-                ResultSet rs = stmt.executeQuery();
-                int index = 1;
-
-                while (rs.next()) {
-                    int spotNumber = rs.getInt("spot_number");
-                    String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
-                    String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
-                    double fee = rs.getDouble("fee");
-
-                    String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
-
-                    // إضافة الحجز إلى القائمة قبل التحقق من التكرار
-                    reservationsList.add(data);
+                // التحقق من وجود الشهادة في قاعدة البيانات
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                    return;
                 }
 
-                // الآن التحقق من التكرار
-                for (String reservation : reservationsList) {
-                    if (!uniqueReservations.contains(reservation)) {
-                        uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
-                        out.println(SecurityUtils.sanitizeForXSS(index + ". " + reservation)); // إرسال الحجز الفريد مع حماية XSS
-                        index++;
+                // استعلام لعرض الحجوزات
+                String sql = """
+            SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+            FROM reservations r
+            JOIN parking_spots ps ON r.parking_spot_id = ps.id
+            WHERE r.user_id = ?
+            ORDER BY r.reserved_at;
+        """;
+
+                Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
+                List<String> reservationsList = new ArrayList<>(); // قائمة لتخزين جميع الحجوزات
+
+                try (Connection conn = DriverManager.getConnection(DB_URL);
+                     PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setInt(1, getCurrentUserId());
+                    ResultSet rs = stmt.executeQuery();
+                    int index = 1;
+                    while (rs.next()) {
+                        int spotNumber = rs.getInt("spot_number");
+                        String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
+                        String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
+                        double fee = rs.getDouble("fee");
+                        String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
+                        // إضافة الحجز إلى القائمة قبل التحقق من التكرار
+                        reservationsList.add(data);
                     }
+
+                    // الآن التحقق من التكرار
+                    for (String reservation : reservationsList) {
+                        if (!uniqueReservations.contains(reservation)) {
+                            uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
+                            out.println(SecurityUtils.sanitizeForXSS(index + ". " + reservation)); // إرسال الحجز الفريد مع حماية XSS
+                            index++;
+                        }
+                    }
+
+                    if (index == 1) {
+                        out.println("No reservations found.");
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
                 }
 
-                if (index == 1) {
-                    out.println("No reservations found.");
-                }
-            } catch (Exception e) {
-                System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
+                out.println("END_OF_RESERVATIONS");
+            } else {
+                out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
             }
-
-            out.println("END_OF_RESERVATIONS");
         }
         private void handleReserveSpot() throws Exception {
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots);
             out.println("END_OF_SPOTS");
+
             if (availableSpots.equals("No parking spots available.")) {
                 return;
             }
+
             try {
                 // استقبال البيانات المشفرة من العميل
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
+
                 // استلام الشهادة من العميل
                 String encodedCertificate = in.readLine();
+
+                // التحقق من الشهادة في قاعدة البيانات
+                int userId = getCurrentUserId();  // الحصول على user_id
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                    return;
+                }
+
+                // التحقق من الشهادة الرقمية
                 if (!verifyCertificate(encodedCertificate)) {
                     out.println(AESUtils.encrypt("Error: Invalid certificate."));
                     return;
                 }
+
                 // فك تشفير البيانات باستخدام AES
                 int spotNumber = Integer.parseInt(AESUtils.decrypt(encryptedSpotNumber));
                 String startTime = AESUtils.decrypt(encryptedStartTime);
                 String endTime = AESUtils.decrypt(encryptedEndTime);
 
-                // التحقق من صحة التواريخ (اختياري: يمكنك تحسين هذه الطريقة حسب المتطلبات)
+                // التحقق من صحة نطاق الوقت
                 if (!isValidTimeRange(startTime, endTime)) {
                     out.println(AESUtils.encrypt("Error: Invalid time range."));
                     return;
@@ -449,6 +497,7 @@ public class ParkingServer {
                 String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
+
                 if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
@@ -494,20 +543,18 @@ public class ParkingServer {
                 if (reserveParkingSpot(spotNumber, startTime, endTime)) {
                     String reservationSuccessMessage = "Reservation successful!";
 
-                    // إرسال التوقيع الرقمي في قاعدة البيانات
                     String reservationSignature = receivedReservationSignature;  // التوقيع الرقمي المستلم
                     String paymentSignature = receivedPaymentSignature;  // توقيع الدفع المستلم
 
-                    // إدخال الحجز في قاعدة البيانات مع التوقيع الرقمي للحجز والدفع
                     String insertReservationWithSignatures = """
-    INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
-    VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
-    """;
+            INSERT INTO reservations (parking_spot_id, user_id, reserved_at, reserved_until, fee, digital_signature_reservation, digital_signature_payment)
+            VALUES ((SELECT id FROM parking_spots WHERE spot_number = ?), ?, ?, ?, ?, ?, ?);
+            """;
 
                     try (Connection conn = DriverManager.getConnection(DB_URL);
                          PreparedStatement stmt = conn.prepareStatement(insertReservationWithSignatures)) {
                         stmt.setInt(1, spotNumber);
-                        stmt.setInt(2, getCurrentUserId());  // تأكد من أنك تقوم بتحديد ID المستخدم بشكل صحيح
+                        stmt.setInt(2, userId);
                         stmt.setString(3, AESUtils.encrypt(startTime));
                         stmt.setString(4, AESUtils.encrypt(endTime));
                         stmt.setDouble(5, fee);
