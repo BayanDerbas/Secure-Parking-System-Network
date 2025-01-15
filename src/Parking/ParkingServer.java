@@ -33,6 +33,7 @@ public class ParkingServer {
             this.clientSocket = socket;
         }
         @Override
+
         public void run() {
             try {
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -49,8 +50,11 @@ public class ParkingServer {
                         case "login":
                             handleLogin();
                             break;
-                        case "view_available_spots":
-                            viewAvailableParkingSpots();
+                        case "view_parking_spots": // هنا نستخدم العملية المناسبة لعرض أماكن الوقوف
+                            sendAvailableParkingSpots();
+                            break;
+                        case "view_all_visitors": // هنا نستخدم العملية المناسبة لعرض الزوار
+                            sendAllVisitors();
                             break;
                         case "reserve_spot":
                             handleReserveSpot();
@@ -175,33 +179,46 @@ public class ParkingServer {
                 return false;
             }
         }
+        private String getUserType(String fullName) {
+            String sql = "SELECT user_type FROM users WHERE full_name = ?";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, fullName);
+                ResultSet rs = pstmt.executeQuery();
+                if (rs.next()) {
+                    return rs.getString("user_type");
+                }
+            } catch (SQLException e) {
+                System.err.println("Error fetching user type: " + e.getMessage());
+            }
+            return "Visitor";  // إذا لم يكن نوع المستخدم موجودًا، نعيد "زائر" كإفتراض
+        }
         private void handleLogin() throws IOException {
             System.out.println("Handling login...");
-            String fullName = SecurityUtils.sanitizeForXSS(in.readLine());  // حماية ضد XSS
+            String fullName = SecurityUtils.sanitizeForXSS(in.readLine());
             System.out.println("Received full name: " + fullName);
             String encryptedPassword = in.readLine();
 
-            // فك تشفير كلمة المرور
             String rawPassword;
             try {
                 rawPassword = AESUtils.decrypt(encryptedPassword);
-                System.out.println("Decrypted password: " + rawPassword);
             } catch (Exception e) {
                 System.err.println("Error decrypting password: " + e.getMessage());
                 out.println("Login failed!");
                 return;
             }
 
-            // استلام الشهادة
             String encodedCertificate = in.readLine();
             if (verifyCertificate(encodedCertificate)) {
                 int userId = getUserIdByFullName(fullName);
                 if (userId != -1 && checkCertificateExists(userId)) {
                     boolean isLoggedIn = loginUser(fullName, rawPassword);
                     if (isLoggedIn) {
-                        System.out.println("Login successful for user: " + fullName);
-                        currentUser = fullName; // تحديث المستخدم الحالي
+                        String userType = getUserType(fullName); // جلب نوع المستخدم
+                        System.out.println("Login successful for user: " + fullName + " (Type: " + userType + ")");
                         out.println("Login successful!");
+                        out.println(userType); // إرسال نوع المستخدم
+                        currentUser = fullName;
                     } else {
                         System.out.println("Login failed for user: " + fullName);
                         out.println("Login failed!");
@@ -329,11 +346,6 @@ public class ParkingServer {
                 System.err.println("Error during user registration: " + e.getMessage());
                 return false;
             }
-        }
-        private void viewAvailableParkingSpots() throws IOException {
-            String availableSpots = getAvailableParkingSpots();
-            out.println(availableSpots); // إرسال جميع المواقف
-            out.println("END_OF_SPOTS"); // إشارة نهاية
         }
         private String getAvailableParkingSpots() {
             StringBuilder spots = new StringBuilder();
@@ -659,6 +671,48 @@ public class ParkingServer {
             }
 
             return durationHours * 10.0; // الرسوم 10 وحدات لكل ساعة
+        }
+        private void sendAvailableParkingSpots() throws Exception {
+            String sql = "SELECT * FROM parking_spots";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+
+                StringBuilder spots = new StringBuilder();
+                while (rs.next()) {
+                    spots.append("Spot : ").append(rs.getInt("spot_number")).append(", ");
+                }
+
+                String response = spots.length() == 0 ? "No available parking spots." : spots.toString();
+                String encryptedResponse = AESUtils.encrypt(response);
+                out.println(encryptedResponse); // إرسال الرد المشفر
+                System.out.println("Sent response: " + response); // طباعة الرد
+            } catch (SQLException e) {
+                System.err.println("Error fetching parking spots: " + e.getMessage());
+                String encryptedResponse = AESUtils.encrypt("Error fetching parking spots.");
+                out.println(encryptedResponse); // إرسال خطأ مشفر
+            }
+        }
+        private void sendAllVisitors() throws Exception {
+            String sql = "SELECT full_name FROM users WHERE user_type = 'Visitor'";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+
+                StringBuilder visitorsList = new StringBuilder();
+                while (rs.next()) {
+                    visitorsList.append(rs.getString("full_name")).append("\n");
+                }
+
+                String response = visitorsList.length() == 0 ? "No visitors found." : visitorsList.toString();
+                String encryptedResponse = AESUtils.encrypt(response);
+                out.println(encryptedResponse); // إرسال الرد المشفر
+                System.out.println("Sent response: \n" + response); // طباعة الرد
+            } catch (SQLException e) {
+                System.err.println("Error fetching visitors: " + e.getMessage());
+                String encryptedResponse = AESUtils.encrypt("Error fetching visitors.");
+                out.println(encryptedResponse); // إرسال خطأ مشفر
+            }
         }
     }
 }

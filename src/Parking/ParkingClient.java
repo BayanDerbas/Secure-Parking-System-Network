@@ -101,51 +101,60 @@ public class ParkingClient {
         String encryptedPassword = AESUtils.encrypt(rawPassword);
         out.println(encryptedPassword);
         System.out.println("Sent encrypted password.");
-        System.out.println("........................Digital Certificate........................");
 
-        // إرسال الشهادة
+        System.out.println("........................Digital Certificate........................");
         String certificatePath = "C:\\Users\\ahmad\\Documents\\" + fullName + "_certificate.crt";
         File certificateFile = new File(certificatePath);
         if (certificateFile.exists()) {
-            // قراءة الشهادة من الملف
             byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
             String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-            System.out.println("Certificate content (Base64 encoded):");
-            System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-            out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
-            // عند إرسال الشهادة:
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            String formattedDateTime = LocalDateTime.now().format(formatter);
-            System.out.println("Sent certificate at: " + formattedDateTime); // تاريخ إرسال الشهادة مع فراغات بين التاريخ والساعة
+            out.println(encodedCertificate); // إرسال الشهادة
         } else {
             System.err.println("Certificate file not found.");
         }
 
-        // إضافة مفتاح التوثيق
-        String usedKey = "Client's Private Key"; // يمكن استبداله بالمفتاح الذي تم استخدامه للإرسال
-        System.out.println("Verification key used: " + usedKey);
-
         System.out.println("Waiting for server response...");
         String serverResponse = in.readLine();
         System.out.println("Server response: " + serverResponse);
+
         if ("Login successful!".equals(serverResponse)) {
-            userMenu(out, in, scanner, fullName);  // تمرير fullName هنا
+            // استقبال نوع المستخدم
+            String userType = in.readLine();
+            System.out.println("User type: " + userType);
+            userMenu(out, in, scanner, fullName, userType); // تمرير نوع المستخدم
         } else {
             System.out.println("Login failed!");
         }
     }
-    private static void userMenu(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws Exception {
+    private static void userMenu(PrintWriter out, BufferedReader in, Scanner scanner, String fullName, String userType) throws Exception {
         while (true) {
-            System.out.println("1. Reserve a parking spot");
-            System.out.println("2. View your reservations");
+            if ("Employee".equalsIgnoreCase(userType)) {
+                System.out.println("1. View parking spots");
+                System.out.println("2. View all visitors");
+            } else {
+                System.out.println("1. Reserve a parking spot");
+                System.out.println("2. View your reservations");
+            }
             System.out.println("3. Logout");
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
 
             switch (choice) {
-                case 1 -> handleReserveSpot(out, in, scanner, fullName);  // تمرير fullName هنا
-                case 2 -> handleViewReservations(out, in,fullName);
+                case 1 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleViewParkingSpots(out, in);
+                    } else {
+                        handleReserveSpot(out, in, scanner, fullName);
+                    }
+                }
+                case 2 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleViewAllVisitors(out, in);
+                    } else {
+                        handleViewReservations(out, in, fullName);
+                    }
+                }
                 case 3 -> {
                     System.out.println("Logging out...");
                     return;
@@ -153,6 +162,28 @@ public class ParkingClient {
                 default -> System.out.println("Invalid option. Try again.");
             }
         }
+    }
+    private static void handleViewParkingSpots(PrintWriter out, BufferedReader in) throws Exception {
+        out.println("view_parking_spots"); // إرسال الطلب
+        System.out.println("Sent request: view_parking_spots"); // طباعة الطلب
+
+        String encryptedResponse = in.readLine(); // استقبال الرد المشفر
+        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
+        System.out.println("Server Response: " + serverResponse); // طباعة الرد
+
+        if ("No available parking spots.".equals(serverResponse)) {
+            System.out.println("No parking spots available.");
+        } else {
+            System.out.println("Available parking spots:\n" + serverResponse);
+        }
+    }
+    private static void handleViewAllVisitors(PrintWriter out, BufferedReader in) throws Exception {
+        out.println("view_all_visitors"); // إرسال الطلب
+        System.out.println("Sent request: view_all_visitors"); // طباعة الطلب
+
+        String encryptedResponse = in.readLine(); // استقبال الرد المشفر
+        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
+        System.out.println("Server Response: Visitors:\n" + serverResponse); // طباعة الرد
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws IOException {
         // طلب عرض المواقف المتاحة
