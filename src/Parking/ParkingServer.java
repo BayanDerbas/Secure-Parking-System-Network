@@ -2,6 +2,7 @@ package Parking;
 import Utils.*;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.*;
 import java.sql.*;
@@ -26,7 +27,7 @@ public class ParkingServer {
     }
     private static class ClientHandler implements Runnable {
         private Socket clientSocket;
-        private PrintWriter out;
+        private static PrintWriter out;
         private BufferedReader in;
         private String currentUser; // المستخدم الحالي للجلسة
         public ClientHandler(Socket socket) {
@@ -42,7 +43,6 @@ public class ParkingServer {
                 String operation;
                 while ((operation = in.readLine()) != null) {
                     System.out.println("Operation received: " + operation);
-
                     switch (operation) {
                         case "register":
                             handleRegister();
@@ -50,10 +50,10 @@ public class ParkingServer {
                         case "login":
                             handleLogin();
                             break;
-                        case "view_parking_spots": // هنا نستخدم العملية المناسبة لعرض أماكن الوقوف
-                            sendAvailableParkingSpots();
+                        case "view_parking_spots":
+                            handleViewParkingSpots();
                             break;
-                        case "view_all_visitors": // هنا نستخدم العملية المناسبة لعرض الزوار
+                        case "view_all_visitors":
                             sendAllVisitors();
                             break;
                         case "reserve_spot":
@@ -62,8 +62,20 @@ public class ParkingServer {
                         case "view_reservations":
                             handleViewReservations();
                             break;
+                        case "add_parking_spot":
+                            handleAddParkingSpot();
+                            break;
+                        case "remove_parking_spot":
+                            handleRemoveParkingSpot();
+                            break;
+                        case "handleCancelReservation":
+                            handleCancelReservation();
+                            break;
+                        case "view_reserved_parking_spots":  // تأكد من أن العملية تتطابق تمامًا
+                            handleViewReservedParkingSpots();
+                            break;
                         default:
-                            out.println(AESUtils.encrypt("Invalid operation."));
+                            out.println(AESUtils.encrypt("Invalid operation."));  // إذا كانت العملية غير صالحة
                             break;
                     }
                 }
@@ -672,27 +684,6 @@ public class ParkingServer {
 
             return durationHours * 10.0; // الرسوم 10 وحدات لكل ساعة
         }
-        private void sendAvailableParkingSpots() throws Exception {
-            String sql = "SELECT * FROM parking_spots";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 Statement stmt = conn.createStatement();
-                 ResultSet rs = stmt.executeQuery(sql)) {
-
-                StringBuilder spots = new StringBuilder();
-                while (rs.next()) {
-                    spots.append("Spot : ").append(rs.getInt("spot_number")).append(", ");
-                }
-
-                String response = spots.length() == 0 ? "No available parking spots." : spots.toString();
-                String encryptedResponse = AESUtils.encrypt(response);
-                out.println(encryptedResponse); // إرسال الرد المشفر
-                System.out.println("Sent response: " + response); // طباعة الرد
-            } catch (SQLException e) {
-                System.err.println("Error fetching parking spots: " + e.getMessage());
-                String encryptedResponse = AESUtils.encrypt("Error fetching parking spots.");
-                out.println(encryptedResponse); // إرسال خطأ مشفر
-            }
-        }
         private void sendAllVisitors() throws Exception {
             String sql = "SELECT full_name FROM users WHERE user_type = 'Visitor'";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -712,6 +703,155 @@ public class ParkingServer {
                 System.err.println("Error fetching visitors: " + e.getMessage());
                 String encryptedResponse = AESUtils.encrypt("Error fetching visitors.");
                 out.println(encryptedResponse); // إرسال خطأ مشفر
+            }
+        }
+        private void handleAddParkingSpot() throws IOException {
+            try {
+                int spotNumber = Integer.parseInt(in.readLine());
+                String sql = "INSERT INTO parking_spots (spot_number) VALUES (?)";
+                try (Connection conn = DriverManager.getConnection(DB_URL);
+                     PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setInt(1, spotNumber);
+                    int rows = pstmt.executeUpdate();
+                    if (rows > 0) {
+                        System.out.println("Parking spot " + spotNumber + " added successfully.");
+                        out.println("Parking spot added successfully.");
+
+                        // إعادة إرسال جميع المواقف بعد إضافة الجديد
+                        handleViewParkingSpots();
+                    } else {
+                        out.println("Failed to add parking spot.");
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("Error adding parking spot: " + e.getMessage());
+                out.println("Error adding parking spot: " + e.getMessage());
+            }
+        }
+        private void handleViewParkingSpots() throws IOException {
+            String sql = "SELECT spot_number FROM parking_spots";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+                StringBuilder spotsList = new StringBuilder();
+                while (rs.next()) {
+                    spotsList.append("Spot : ").append(rs.getInt("spot_number")).append(", ");
+                }
+
+                // تشفير القائمة باستخدام AES ثم إرسالها مع Base64
+                String encryptedSpots = AESUtils.encrypt(spotsList.toString());
+                String base64Spots = Base64.getEncoder().encodeToString(encryptedSpots.getBytes(StandardCharsets.UTF_8));
+                out.println(base64Spots);
+            } catch (Exception e) {
+                System.err.println("Error fetching parking spots: " + e.getMessage());
+                out.println("Error fetching parking spots.");
+            }
+        }
+        private void handleRemoveParkingSpot() throws IOException {
+            try {
+                int spotNumber = Integer.parseInt(in.readLine());
+                String sql = "DELETE FROM parking_spots WHERE spot_number = ?";
+                try (Connection conn = DriverManager.getConnection(DB_URL);
+                     PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setInt(1, spotNumber);
+                    int rows = pstmt.executeUpdate();
+                    if (rows > 0) {
+                        System.out.println("Parking spot " + spotNumber + " removed successfully.");
+                        out.println("Parking spot removed successfully.");
+                    } else {
+                        out.println("Failed to remove parking spot. Spot not found.");
+                    }
+                }
+            } catch (SQLException e) {
+                System.err.println("Error removing parking spot: " + e.getMessage());
+                out.println("Error removing parking spot: " + e.getMessage());
+            }
+        }
+        private void handleCancelReservation() throws Exception {
+            // استلام معرف الحجز من العميل
+            String reservationId = in.readLine();
+
+            try (Connection conn = DriverManager.getConnection(DB_URL)) {
+                // تحقق من وجود الحجز في قاعدة البيانات قبل حذفه
+                String checkSql = "SELECT * FROM reservations WHERE id = ?";
+                try (PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+                    stmt.setString(1, reservationId);
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        if (rs.next()) {
+                            // إذا كان الحجز موجودًا، نقوم بحذفه
+                            String deleteSql = "DELETE FROM reservations WHERE id = ?";
+                            try (PreparedStatement deleteStmt = conn.prepareStatement(deleteSql)) {
+                                deleteStmt.setString(1, reservationId);
+                                deleteStmt.executeUpdate();
+                                out.println(AESUtils.encrypt("Reservation cancelled successfully."));
+                            }
+                        } else {
+                            out.println(AESUtils.encrypt("Reservation not found."));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error cancelling reservation: " + e.getMessage());
+                out.println(AESUtils.encrypt("Error cancelling reservation."));
+            }
+        }
+        private void handleViewReservedParkingSpots() throws Exception {
+            try (Connection conn = DriverManager.getConnection(DB_URL)) {
+                String sql = """
+        SELECT r.id AS reservation_id, ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        INNER JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        INNER JOIN users u ON r.user_id = u.id
+        ORDER BY r.reserved_at
+        """;
+
+                // استخدام HashSet لتخزين الحجوزات الفريدة بناءً على spotNumber, reservedAt, reservedUntil
+                Set<String> uniqueReservations = new HashSet<>();
+                List<String> result = new ArrayList<>();
+
+                try (PreparedStatement stmt = conn.prepareStatement(sql);
+                     ResultSet rs = stmt.executeQuery()) {
+
+                    while (rs.next()) {
+                        String reservationId = rs.getString("reservation_id");
+                        int spotNumber = rs.getInt("spot_number");
+                        String fullName = rs.getString("full_name");
+                        String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
+                        String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
+                        double fee = rs.getDouble("fee");
+
+                        // إنشاء حجز فريد بناءً على spotNumber و reservedAt و reservedUntil
+                        String reservationKey = spotNumber + "_" + reservedAt + "_" + reservedUntil;
+
+                        // تحقق من عدم وجود الحجز في الـ Set
+                        if (!uniqueReservations.contains(reservationKey)) {
+                            uniqueReservations.add(reservationKey);  // إضافة الحجز الفريد
+                            String reservationEntry = String.format(
+                                    "Spot %d, Reserved By: %s, From: %s, Until: %s, Fee: $%.2f",
+                                    spotNumber, fullName, reservedAt, reservedUntil, fee
+                            );
+                            result.add(reservationEntry);  // إضافة الحجز إلى القائمة
+                        }
+                    }
+                }
+
+                // إرسال الرد للعميل مع الأرقام التسلسلية
+                if (!result.isEmpty()) {
+                    StringBuilder response = new StringBuilder();
+                    int counter = 1; // العدّاد للتسلسل
+                    for (String reservation : result) {
+                        response.append("Reservation ID: ").append(counter++)
+                                .append(", ").append(reservation).append("\n");
+                    }
+                    // إرسال البيانات المشفرة للعميل
+                    out.println(AESUtils.encrypt(response.toString()));
+                } else {
+                    out.println(AESUtils.encrypt("No reserved parking spots found."));
+                }
+
+            } catch (Exception e) {
+                System.err.println("Error retrieving reservations: " + e.getMessage());
+                out.println(AESUtils.encrypt("Error retrieving reservations."));
             }
         }
     }

@@ -2,6 +2,7 @@ package Parking;
 import Utils.*;
 import java.io.*;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.*;
 import java.time.LocalDateTime;
@@ -129,13 +130,19 @@ public class ParkingClient {
     private static void userMenu(PrintWriter out, BufferedReader in, Scanner scanner, String fullName, String userType) throws Exception {
         while (true) {
             if ("Employee".equalsIgnoreCase(userType)) {
+                // عرض الخيارات للموظف
                 System.out.println("1. View parking spots");
                 System.out.println("2. View all visitors");
+                System.out.println("3. Add a parking spot");
+                System.out.println("4. Remove a parking spot");
+                System.out.println("5. Cancel parking spot reservation"); // خيار إلغاء الحجز
+                System.out.println("6. View all reservations"); // خيار عرض جميع الحجوزات
             } else {
+                // عرض الخيارات للمستخدم العادي
                 System.out.println("1. Reserve a parking spot");
                 System.out.println("2. View your reservations");
             }
-            System.out.println("3. Logout");
+            System.out.println("7. Logout"); // التعديل في رقم الخروج ليكون مناسبًا
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
@@ -156,6 +163,34 @@ public class ParkingClient {
                     }
                 }
                 case 3 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleAddParkingSpot(out, scanner, in); // تمرير BufferedReader هنا
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 4 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleRemoveParkingSpot(out, scanner);
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 5 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleCancelReservation(out, in, scanner); // إضافة خيار إلغاء الحجز للموظف
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 6 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleViewAllReservations(out, in); // عرض جميع الحجوزات للموظف
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 7 -> {
                     System.out.println("Logging out...");
                     return;
                 }
@@ -163,27 +198,115 @@ public class ParkingClient {
             }
         }
     }
-    private static void handleViewParkingSpots(PrintWriter out, BufferedReader in) throws Exception {
-        out.println("view_parking_spots"); // إرسال الطلب
-        System.out.println("Sent request: view_parking_spots"); // طباعة الطلب
+    private static void handleViewParkingSpots(PrintWriter out, BufferedReader in) throws IOException {
+        try {
+            out.println("view_parking_spots");
+            String response = in.readLine();
+            System.out.println("Response: " + response);
 
-        String encryptedResponse = in.readLine(); // استقبال الرد المشفر
-        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
-        System.out.println("Server Response: " + serverResponse); // طباعة الرد
+            // التحقق إذا كانت الرسالة تحتوي على نص غير مشفر
+            if (response.equals("Parking spot added successfully.") || response.equals("Parking spot removed successfully.")) {
+                // إذا كانت الرسالة عبارة عن عملية ناجحة دون بيانات مشفرة
+                System.out.println(response);
+            } else {
+                // فك تشفير Base64 إذا كانت الرسالة مشفرة
+                try {
+                    byte[] encryptedBytes = Base64.getDecoder().decode(response);
+                    String encryptedText = new String(encryptedBytes, StandardCharsets.UTF_8);
+                    System.out.println("Encrypted Text: " + encryptedText);
 
-        if ("No available parking spots.".equals(serverResponse)) {
-            System.out.println("No parking spots available.");
-        } else {
-            System.out.println("Available parking spots:\n" + serverResponse);
+                    // فك تشفير النص المشفر باستخدام AES
+                    String decryptedText = AESUtils.decrypt(encryptedText);
+                    System.out.println("Decrypted Text: " + decryptedText);
+
+                    System.out.println("Available parking spots:");
+                    System.out.println(decryptedText);
+                } catch (IllegalArgumentException e) {
+                    // في حال كانت الرسالة غير مشفرة وحدث خطأ عند فك تشفيرها
+                    System.err.println("Error: Invalid Base64 format or unrecognized response.");
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error viewing parking spots: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     private static void handleViewAllVisitors(PrintWriter out, BufferedReader in) throws Exception {
         out.println("view_all_visitors"); // إرسال الطلب
         System.out.println("Sent request: view_all_visitors"); // طباعة الطلب
 
-        String encryptedResponse = in.readLine(); // استقبال الرد المشفر
-        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
-        System.out.println("Server Response: Visitors:\n" + serverResponse); // طباعة الرد
+        String response = in.readLine(); // استقبال الرد
+
+        // التحقق من نوع الرسالة المستلمة
+        if (response.equals("No visitors found.") || response.equals("Error fetching visitors.")) {
+            // إذا كانت الرسالة عبارة عن نص عادي
+            System.out.println("Server Response: " + response); // طباعة الرد
+        } else {
+            // إذا كانت الرسالة مشفرة بـ AES
+            try {
+                String serverResponse = AESUtils.decrypt(response); // فك التشفير
+                System.out.println("Server Response: Visitors:\n" + serverResponse); // طباعة الرد
+            } catch (Exception e) {
+                System.err.println("Error decrypting server response: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+    private static void handleAddParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in) {
+        try {
+            out.println("add_parking_spot");
+            System.out.print("Enter the spot number to add: ");
+            int spotNumber = scanner.nextInt();
+            scanner.nextLine(); // استهلاك السطر المتبقي
+            out.println(spotNumber);
+            System.out.println("Sent request to add parking spot.");
+
+            // بعد إضافة الموقف، يجب إعادة عرض المواقف
+            handleViewParkingSpots(out, in);  // هنا نمرر BufferedReader بدلاً من Scanner
+        } catch (Exception e) {
+            System.err.println("Error adding parking spot: " + e.getMessage());
+        }
+    }
+    private static void handleRemoveParkingSpot(PrintWriter out, Scanner scanner) {
+        try {
+            out.println("remove_parking_spot");
+            System.out.print("Enter the spot number to remove: ");
+            int spotNumber = scanner.nextInt();
+            scanner.nextLine(); // استهلاك السطر المتبقي
+            out.println(spotNumber);
+            System.out.println("Sent request to remove parking spot.");
+        } catch (Exception e) {
+            System.err.println("Error removing parking spot: " + e.getMessage());
+        }
+    }
+    private static void handleViewAllReservations(PrintWriter out, BufferedReader in) throws Exception {
+        out.println("view_reserved_parking_spots");  // إرسال طلب عرض جميع الحجوزات
+        System.out.println("Sent request: view_reserved_parking_spots");
+
+        // استقبال الرد المشفر من الخادم
+        String encryptedResponse = in.readLine();
+        String serverResponse = AESUtils.decrypt(encryptedResponse);  // فك التشفير
+        System.out.println("Server Response: \n" + serverResponse);  // طباعة الرد
+    }
+    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
+        // عرض جميع الحجوزات للعميل
+        out.println("view_reserved_parking_spots"); // إرسال طلب للعرض
+
+        // استلام قائمة الحجوزات
+        String response = AESUtils.decrypt(in.readLine());
+        System.out.println("Available Reservations:\n" + response);
+
+        // طلب من العميل إدخال معرف الحجز الذي يريد إلغاءه
+        System.out.print("Enter reservation ID to cancel: ");
+        String reservationId = scanner.nextLine();
+
+        // إرسال طلب إلغاء الحجز إلى الخادم
+        out.println("handleCancelReservation");
+        out.println(reservationId);  // إرسال معرف الحجز إلى الخادم
+
+        // استلام الرد من الخادم
+        String cancelResponse = AESUtils.decrypt(in.readLine());
+        System.out.println(cancelResponse);  // طباعة الرد (إلغاء الحجز أو خطأ)
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws IOException {
         // طلب عرض المواقف المتاحة
