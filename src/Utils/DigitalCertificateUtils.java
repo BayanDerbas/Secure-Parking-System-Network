@@ -62,35 +62,26 @@ public class DigitalCertificateUtils {
     // توقيع CSR بواسطة CA باستخدام BouncyCastle
     public static X509Certificate signCSR(String csrPem, KeyPair caKeyPair, String caDistinguishedName) throws Exception {
         X500Name issuerName = new X500Name(caDistinguishedName);
-
         // تحويل CSR من PEM إلى byte array
         byte[] csrBytes = convertPEMToByteArray(csrPem);
-
         // تحميل CSR من bytes
         PKCS10CertificationRequest csrRequest = new PKCS10CertificationRequest(csrBytes);
-
         // استخراج المفتاح العام من CSR
         SubjectPublicKeyInfo subjectPublicKeyInfo = csrRequest.getSubjectPublicKeyInfo();
         PublicKey publicKey = KeyFactory.getInstance("RSA")
                 .generatePublic(new X509EncodedKeySpec(subjectPublicKeyInfo.getEncoded()));
-
         // إنشاء شهادة جديدة
         Date notBefore = new Date();
         Date notAfter = new Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000);  // سنة واحدة من الآن
         X500Name subject = csrRequest.getSubject();
-
         // إنشاء رقم تسلسلي للشهادة
         BigInteger serialNumber = BigInteger.valueOf(System.currentTimeMillis());
-
         // إنشاء الشهادة باستخدام X509v3CertificateBuilder
         X509v3CertificateBuilder certBuilder = new X509v3CertificateBuilder(
                 issuerName, serialNumber, notBefore, notAfter, subject, subjectPublicKeyInfo);
-
         ContentSigner contentSigner = new JcaContentSignerBuilder("SHA256withRSA").build(caKeyPair.getPrivate());
-
         // بناء الشهادة
         X509CertificateHolder certificateHolder = certBuilder.build(contentSigner);
-
         // تحويل إلى X509Certificate
         return new JcaX509CertificateConverter().getCertificate(certificateHolder);
     }

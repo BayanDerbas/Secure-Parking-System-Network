@@ -139,17 +139,16 @@ public class ParkingClient {
                 System.out.println("2. View all visitors");
                 System.out.println("3. Add a parking spot");
                 System.out.println("4. Remove a parking spot");
-                System.out.println("5. Cancel parking spot reservation");
-                System.out.println("6. View all reservations");
-                System.out.println("7. Reserve a parking spot");
-                System.out.println("8. View your reservations");
-                System.out.println("9. Edit a parking spot"); // خيار تعديل الموقف
+                System.out.println("5. View all reservations");
+                System.out.println("6. Reserve a parking spot");
+                System.out.println("7. View your reservations");
+                System.out.println("8. Edit a parking spot"); // خيار تعديل الموقف
             } else {
                 // عرض الخيارات للمستخدم العادي
                 System.out.println("1. Reserve a parking spot");
                 System.out.println("2. View your reservations");
             }
-            System.out.println("10. Logout"); // رقم الخروج محدث ليكون مناسبًا
+            System.out.println("9. Logout"); // رقم الخروج محدث ليكون مناسبًا
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
@@ -178,47 +177,40 @@ public class ParkingClient {
                 }
                 case 4 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleRemoveParkingSpot(out, scanner);
+                        handleRemoveParkingSpot(out, scanner,in);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 5 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleCancelReservation(out, in, scanner);
+                        handleViewAllReservations(out, in);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 6 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewAllReservations(out, in);
+                        handleReserveSpot(out, in, scanner, fullName);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 7 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleReserveSpot(out, in, scanner, fullName);
+                        handleViewReservations(out, in, fullName);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 8 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewReservations(out, in, fullName);
-                    } else {
-                        System.out.println("Invalid option. Try again.");
-                    }
-                }
-                case 9 -> {
-                    if ("Employee".equalsIgnoreCase(userType)) {
                         handleEditParkingSpotName(out, in, scanner); // استدعاء وظيفة تعديل الموقف
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
-                case 10 -> {
+                case 9 -> {
                     System.out.println("Logging out...");
                     return;
                 }
@@ -237,6 +229,9 @@ public class ParkingClient {
                 // إذا كانت الرسالة عبارة عن عملية ناجحة دون بيانات مشفرة
                 System.out.println(response);
             } else {
+                // تنظيف البيانات للحماية ضد XSS
+                response = SecurityUtils.sanitizeForXSS(response);
+
                 // فك تشفير Base64 إذا كانت الرسالة مشفرة
                 try {
                     byte[] encryptedBytes = Base64.getDecoder().decode(response);
@@ -295,14 +290,23 @@ public class ParkingClient {
             System.err.println("Error adding parking spot: " + e.getMessage());
         }
     }
-    private static void handleRemoveParkingSpot(PrintWriter out, Scanner scanner) {
+    private static void handleRemoveParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in) throws IOException {
+        // عرض المواقف المتاحة قبل الطلب
+        handleViewParkingSpots(out, in);
+
         try {
             out.println("remove_parking_spot");
             System.out.print("Enter the spot number to remove: ");
             int spotNumber = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
-            out.println(spotNumber);
+
+            // تنظيف المدخلات قبل الإرسال
+            String sanitizedSpotNumber = SecurityUtils.sanitizeForXSS(String.valueOf(spotNumber));
+            out.println(sanitizedSpotNumber);
             System.out.println("Sent request to remove parking spot.");
+
+            // عرض المواقف بعد حذف الموقف
+            handleViewParkingSpots(out, in);
         } catch (Exception e) {
             System.err.println("Error removing parking spot: " + e.getMessage());
         }
@@ -336,33 +340,14 @@ public class ParkingClient {
         handleViewParkingSpots(out, in);
     }
     private static void handleViewAllReservations(PrintWriter out, BufferedReader in) throws Exception {
-        out.println("view_reserved_parking_spots");  // إرسال طلب عرض جميع الحجوزات
+        // إرسال الطلب للخادم
+        out.println(SecurityUtils.sanitizeForXSS("view_reserved_parking_spots")); // تنظيف المدخلات قبل الإرسال
         System.out.println("Sent request: view_reserved_parking_spots");
 
         // استقبال الرد المشفر من الخادم
         String encryptedResponse = in.readLine();
-        String serverResponse = AESUtils.decrypt(encryptedResponse);  // فك التشفير
-        System.out.println("Server Response: \n" + serverResponse);  // طباعة الرد
-    }
-    private static void handleCancelReservation(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
-        // عرض جميع الحجوزات للعميل
-        out.println("view_reserved_parking_spots"); // إرسال طلب للعرض
-
-        // استلام قائمة الحجوزات
-        String response = AESUtils.decrypt(in.readLine());
-        System.out.println("Available Reservations:\n" + response);
-
-        // طلب من العميل إدخال معرف الحجز الذي يريد إلغاءه
-        System.out.print("Enter reservation ID to cancel: ");
-        String reservationId = scanner.nextLine();
-
-        // إرسال طلب إلغاء الحجز إلى الخادم
-        out.println("handleCancelReservation");
-        out.println(reservationId);  // إرسال معرف الحجز إلى الخادم
-
-        // استلام الرد من الخادم
-        String cancelResponse = AESUtils.decrypt(in.readLine());
-        System.out.println(cancelResponse);  // طباعة الرد (إلغاء الحجز أو خطأ)
+        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
+        System.out.println("Server Response: \n" + serverResponse); // طباعة الرد
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws IOException {
         // طلب عرض المواقف المتاحة
