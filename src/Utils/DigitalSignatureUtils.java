@@ -3,7 +3,7 @@ package Utils;
 import java.security.*;
 import java.util.Base64;
 
-public class DigitalSignatureUtil {
+public class DigitalSignatureUtils {
     // توليد التوقيع الرقمي باستخدام المفتاح الخاص
     public static String generateDigitalSignature(String data, PrivateKey privateKey) throws Exception {
         String algorithm = "SHA256withRSA";
@@ -36,34 +36,5 @@ public class DigitalSignatureUtil {
         boolean isVerified = signature.verify(signatureBytes);
         System.out.println("Signature verification result: " + isVerified);
         return isVerified;
-    }
-    public static void main(String[] args) {
-        try {
-            // توليد زوج مفاتيح RSA
-            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048);
-            KeyPair keyPair = keyPairGenerator.generateKeyPair();
-            PrivateKey privateKey = keyPair.getPrivate();
-            PublicKey publicKey = keyPair.getPublic();
-
-            // البيانات المراد توقيعها
-            String data = "This is the data to be signed.";
-
-            // إنشاء التوقيع الرقمي
-            String digitalSignature = DigitalSignatureUtil.generateDigitalSignature(data, privateKey);
-            System.out.println("Digital Signature (Base64): " + digitalSignature);
-
-            // التحقق من صحة التوقيع الرقمي
-            boolean isSignatureValid = DigitalSignatureUtil.verifyDigitalSignature(data, digitalSignature, publicKey);
-            System.out.println("Is the signature valid? " + isSignatureValid);
-
-            // تجربة تغيير البيانات للتحقق من سلامة التوقيع
-            String tamperedData = "This is the tampered data.";
-            boolean isTamperedSignatureValid = DigitalSignatureUtil.verifyDigitalSignature(tamperedData, digitalSignature, publicKey);
-            System.out.println("Is the signature valid for tampered data? " + isTamperedSignatureValid);
-
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-        }
     }
 }

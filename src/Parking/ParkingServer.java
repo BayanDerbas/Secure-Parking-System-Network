@@ -34,7 +34,6 @@ public class ParkingServer {
             this.clientSocket = socket;
         }
         @Override
-
         public void run() {
             try {
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -73,6 +72,9 @@ public class ParkingServer {
                             break;
                         case "view_reserved_parking_spots":  // تأكد من أن العملية تتطابق تمامًا
                             handleViewReservedParkingSpots();
+                            break;
+                        case "Edit_Parking_Spot_Name":
+                            handleEditParkingSpotName();
                             break;
                         default:
                             out.println(AESUtils.encrypt("Invalid operation."));  // إذا كانت العملية غير صالحة
@@ -214,6 +216,7 @@ public class ParkingServer {
             String rawPassword;
             try {
                 rawPassword = AESUtils.decrypt(encryptedPassword);
+                System.out.println("Decrypted password successfully.");
             } catch (Exception e) {
                 System.err.println("Error decrypting password: " + e.getMessage());
                 out.println("Login failed!");
@@ -221,9 +224,13 @@ public class ParkingServer {
             }
 
             String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client. Verifying...");
+
             if (verifyCertificate(encodedCertificate)) {
+                System.out.println("Certificate verified successfully.");
                 int userId = getUserIdByFullName(fullName);
                 if (userId != -1 && checkCertificateExists(userId)) {
+                    System.out.println("Certificate exists in the database.");
                     boolean isLoggedIn = loginUser(fullName, rawPassword);
                     if (isLoggedIn) {
                         String userType = getUserType(fullName); // جلب نوع المستخدم
@@ -236,9 +243,11 @@ public class ParkingServer {
                         out.println("Login failed!");
                     }
                 } else {
+                    System.out.println("Certificate not found in the database for user: " + fullName);
                     out.println("Login failed! Certificate not found.");
                 }
             } else {
+                System.out.println("Certificate verification failed for user: " + fullName);
                 out.println("Login failed! Error verifying certificate.");
             }
         }
@@ -522,7 +531,7 @@ public class ParkingServer {
                 PublicKey publicKey = RSAUtils.loadPublicKey("C:/Users/ahmad/Documents/public_key.pem");
                 String receivedReservationSignature = in.readLine();
 
-                if (!DigitalSignatureUtil.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
+                if (!DigitalSignatureUtils.verifyDigitalSignature(dataToSign, receivedReservationSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid reservation data."));
                     return;
                 }
@@ -547,7 +556,7 @@ public class ParkingServer {
                 // استقبال توقيع الدفع من العميل
                 String receivedPaymentSignature = in.readLine();
                 String paymentConfirmation = "confirm_payment";
-                if (!DigitalSignatureUtil.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey)) {
+                if (!DigitalSignatureUtils.verifyDigitalSignature(paymentConfirmation, receivedPaymentSignature, publicKey)) {
                     out.println(AESUtils.encrypt("Error: Invalid payment confirmation."));
                     return;
                 }
@@ -706,26 +715,23 @@ public class ParkingServer {
             }
         }
         private void handleAddParkingSpot() throws IOException {
-            try {
-                int spotNumber = Integer.parseInt(in.readLine());
-                String sql = "INSERT INTO parking_spots (spot_number) VALUES (?)";
-                try (Connection conn = DriverManager.getConnection(DB_URL);
-                     PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                    pstmt.setInt(1, spotNumber);
-                    int rows = pstmt.executeUpdate();
-                    if (rows > 0) {
-                        System.out.println("Parking spot " + spotNumber + " added successfully.");
-                        out.println("Parking spot added successfully.");
+            int spotNumber = Integer.parseInt(in.readLine());
+            String sql = "INSERT INTO parking_spots (spot_number) VALUES (?)";
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, spotNumber);
+                int rows = pstmt.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("Parking spot " + spotNumber + " added successfully.");
+                    out.println("Parking spot added successfully.");
 
-                        // إعادة إرسال جميع المواقف بعد إضافة الجديد
-                        handleViewParkingSpots();
-                    } else {
-                        out.println("Failed to add parking spot.");
-                    }
+                    // إعادة إرسال جميع المواقف بعد إضافة الجديد
+                    handleViewParkingSpots();
+                } else {
+                    out.println("Failed to add parking spot.");
                 }
-            } catch (SQLException e) {
-                System.err.println("Error adding parking spot: " + e.getMessage());
-                out.println("Error adding parking spot: " + e.getMessage());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
             }
         }
         private void handleViewParkingSpots() throws IOException {
@@ -733,18 +739,54 @@ public class ParkingServer {
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql);
                  ResultSet rs = pstmt.executeQuery()) {
+
                 StringBuilder spotsList = new StringBuilder();
                 while (rs.next()) {
-                    spotsList.append("Spot : ").append(rs.getInt("spot_number")).append(", ");
+                    spotsList.append("Spot: ").append(rs.getString("spot_number")).append(", ");
                 }
 
-                // تشفير القائمة باستخدام AES ثم إرسالها مع Base64
+                // تشفير القائمة وإرسالها
                 String encryptedSpots = AESUtils.encrypt(spotsList.toString());
                 String base64Spots = Base64.getEncoder().encodeToString(encryptedSpots.getBytes(StandardCharsets.UTF_8));
                 out.println(base64Spots);
             } catch (Exception e) {
                 System.err.println("Error fetching parking spots: " + e.getMessage());
                 out.println("Error fetching parking spots.");
+            }
+        }
+        private void handleEditParkingSpotName() throws Exception {
+            try {
+                // قراءة البيانات المدخلة (اسم الموقف القديم والجديد)
+                String encryptedOldSpotName = in.readLine();
+                String encryptedNewSpotName = in.readLine();
+
+                // فك التشفير
+                String oldSpotName = AESUtils.decrypt(encryptedOldSpotName);
+                String newSpotName = AESUtils.decrypt(encryptedNewSpotName);
+
+                if (oldSpotName.equals(newSpotName)) {
+                    out.println(AESUtils.encrypt("Old and new spot names cannot be the same."));
+                    return;
+                }
+
+                // تحديث الموقف في قاعدة البيانات
+                String sql = "UPDATE parking_spots SET spot_number = ? WHERE spot_number = ?";
+                try (Connection conn = DriverManager.getConnection(DB_URL);
+                     PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+                    pstmt.setString(1, newSpotName);
+                    pstmt.setString(2, oldSpotName);
+
+                    int rowsUpdated = pstmt.executeUpdate();
+                    if (rowsUpdated > 0) {
+                        out.println(AESUtils.encrypt("Parking spot updated successfully."));
+                    } else {
+                        out.println(AESUtils.encrypt("Parking spot not found."));
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error updating parking spot: " + e.getMessage());
+                out.println(AESUtils.encrypt("Error updating parking spot."));
             }
         }
         private void handleRemoveParkingSpot() throws IOException {

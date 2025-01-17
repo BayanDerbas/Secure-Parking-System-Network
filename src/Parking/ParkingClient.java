@@ -94,9 +94,10 @@ public class ParkingClient {
         System.out.println("Sending login request to the server...");
         out.println("login");
         System.out.print("Enter your full name: ");
-        String fullName = SecurityUtils.sanitizeForXSS(scanner.nextLine());  // حماية ضد XSS
+        String fullName = SecurityUtils.sanitizeForXSS(scanner.nextLine()); // حماية ضد XSS
         out.println(fullName);
         System.out.println("Sent full name: " + fullName);
+
         System.out.print("Enter your password: ");
         String rawPassword = scanner.nextLine();
         String encryptedPassword = AESUtils.encrypt(rawPassword);
@@ -104,14 +105,18 @@ public class ParkingClient {
         System.out.println("Sent encrypted password.");
 
         System.out.println("........................Digital Certificate........................");
-        String certificatePath = "C:\\Users\\ahmad\\Documents\\" + fullName + "_certificate.crt";
+        String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
         File certificateFile = new File(certificatePath);
+
         if (certificateFile.exists()) {
+            System.out.println("Certificate file found. Encoding...");
             byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
             String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-            out.println(encodedCertificate); // إرسال الشهادة
+            out.println(encodedCertificate);
+            System.out.println("Certificate sent to the server.");
         } else {
-            System.err.println("Certificate file not found.");
+            System.err.println("Certificate file not found at path: " + certificatePath);
+            out.println(""); // إرسال قيمة فارغة لتجنب انتظار الخادم
         }
 
         System.out.println("Waiting for server response...");
@@ -119,8 +124,7 @@ public class ParkingClient {
         System.out.println("Server response: " + serverResponse);
 
         if ("Login successful!".equals(serverResponse)) {
-            // استقبال نوع المستخدم
-            String userType = in.readLine();
+            String userType = in.readLine(); // استقبال نوع المستخدم
             System.out.println("User type: " + userType);
             userMenu(out, in, scanner, fullName, userType); // تمرير نوع المستخدم
         } else {
@@ -135,14 +139,17 @@ public class ParkingClient {
                 System.out.println("2. View all visitors");
                 System.out.println("3. Add a parking spot");
                 System.out.println("4. Remove a parking spot");
-                System.out.println("5. Cancel parking spot reservation"); // خيار إلغاء الحجز
-                System.out.println("6. View all reservations"); // خيار عرض جميع الحجوزات
+                System.out.println("5. Cancel parking spot reservation");
+                System.out.println("6. View all reservations");
+                System.out.println("7. Reserve a parking spot");
+                System.out.println("8. View your reservations");
+                System.out.println("9. Edit a parking spot"); // خيار تعديل الموقف
             } else {
                 // عرض الخيارات للمستخدم العادي
                 System.out.println("1. Reserve a parking spot");
                 System.out.println("2. View your reservations");
             }
-            System.out.println("7. Logout"); // التعديل في رقم الخروج ليكون مناسبًا
+            System.out.println("10. Logout"); // رقم الخروج محدث ليكون مناسبًا
             System.out.print("Choose an option: ");
             int choice = scanner.nextInt();
             scanner.nextLine(); // استهلاك السطر المتبقي
@@ -164,7 +171,7 @@ public class ParkingClient {
                 }
                 case 3 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleAddParkingSpot(out, scanner, in); // تمرير BufferedReader هنا
+                        handleAddParkingSpot(out, scanner, in);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
@@ -178,19 +185,40 @@ public class ParkingClient {
                 }
                 case 5 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleCancelReservation(out, in, scanner); // إضافة خيار إلغاء الحجز للموظف
+                        handleCancelReservation(out, in, scanner);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 6 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewAllReservations(out, in); // عرض جميع الحجوزات للموظف
+                        handleViewAllReservations(out, in);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 7 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleReserveSpot(out, in, scanner, fullName);
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 8 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleViewReservations(out, in, fullName);
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 9 -> {
+                    if ("Employee".equalsIgnoreCase(userType)) {
+                        handleEditParkingSpotName(out, in, scanner); // استدعاء وظيفة تعديل الموقف
+                    } else {
+                        System.out.println("Invalid option. Try again.");
+                    }
+                }
+                case 10 -> {
                     System.out.println("Logging out...");
                     return;
                 }
@@ -278,6 +306,34 @@ public class ParkingClient {
         } catch (Exception e) {
             System.err.println("Error removing parking spot: " + e.getMessage());
         }
+    }
+    private static void handleEditParkingSpotName(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
+        // عرض المواقف المتاحة
+        System.out.println("Fetching available parking spots...");
+        handleViewParkingSpots(out, in);
+
+        // مطالبة المستخدم بإدخال الأرقام
+        System.out.print("Enter the old parking spot number: ");
+        int oldSpotNumber = scanner.nextInt();
+        scanner.nextLine(); // استهلاك السطر المتبقي
+
+        System.out.print("Enter the new parking spot number: ");
+        int newSpotNumber = scanner.nextInt();
+        scanner.nextLine(); // استهلاك السطر المتبقي
+
+        // إرسال العملية والبيانات المشفرة
+        out.println("Edit_Parking_Spot_Name");
+        out.println(AESUtils.encrypt(String.valueOf(oldSpotNumber)));
+        out.println(AESUtils.encrypt(String.valueOf(newSpotNumber)));
+
+        // قراءة الرد
+        String response = in.readLine();
+        String decryptedResponse = AESUtils.decrypt(response);
+        System.out.println(decryptedResponse);
+
+        // إعادة جلب المواقف المتاحة
+        System.out.println("Fetching updated parking spots...");
+        handleViewParkingSpots(out, in);
     }
     private static void handleViewAllReservations(PrintWriter out, BufferedReader in) throws Exception {
         out.println("view_reserved_parking_spots");  // إرسال طلب عرض جميع الحجوزات
@@ -367,7 +423,7 @@ public class ParkingClient {
             // إنشاء التوقيع الرقمي وإرساله باستخدام RSA
             PrivateKey privateKey = RSAUtils.loadPrivateKey("C:/Users/ahmad/Documents/private_key.pem");
             String dataToSign = encryptedSpotNumber + "|" + encryptedStartTime + "|" + encryptedEndTime;
-            String reservationSignature = DigitalSignatureUtil.generateDigitalSignature(dataToSign, privateKey);
+            String reservationSignature = DigitalSignatureUtils.generateDigitalSignature(dataToSign, privateKey);
             out.println(reservationSignature);
 
             // استقبال الرسوم المشفرة من الخادم (بـ RSA)
@@ -385,11 +441,15 @@ public class ParkingClient {
                 return;
             }
 
-            // إرسال الشهادة مع تأكيد الدفع
-            System.out.println("........................Digital Certificate for Payment Verification........................");
+            // إرسال الشهادة الرقمية
+            System.out.println("........................Digital Certificate........................");
+             certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+             certificateFile = new File(certificatePath);
             if (certificateFile.exists()) {
                 byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
                 String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                System.out.println("Certificate content (Base64 encoded):");
+                System.out.println(encodedCertificate);
                 out.println(encodedCertificate);
             } else {
                 System.err.println("Certificate file not found.");
@@ -397,7 +457,7 @@ public class ParkingClient {
 
             // إرسال توقيع تأكيد الدفع باستخدام RSA
             String paymentConfirmation = "confirm_payment";
-            String paymentSignature = DigitalSignatureUtil.generateDigitalSignature(paymentConfirmation, privateKey);
+            String paymentSignature = DigitalSignatureUtils.generateDigitalSignature(paymentConfirmation, privateKey);
             out.println(paymentSignature);
 
             // استقبال الرد النهائي من الخادم
