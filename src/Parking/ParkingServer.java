@@ -829,7 +829,6 @@ public class ParkingServer {
         }
         private void handleViewAllReservedParkingSpots() throws Exception {
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
-                // الاستعلام الأساسي
                 String sql = """
 SELECT r.id AS reservation_id, ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
 FROM reservations r
@@ -838,50 +837,42 @@ INNER JOIN users u ON r.user_id = u.id
 ORDER BY r.reserved_at
 """;
 
-                // استخدام HashSet لتخزين الحجوزات الفريدة بناءً على spotNumber, reservedAt, reservedUntil
                 Set<String> uniqueReservations = new HashSet<>();
                 List<String> result = new ArrayList<>();
 
-                // استخدام PreparedStatement مع الحماية
                 try (PreparedStatement stmt = SecurityUtils.prepareSafeStatement(conn, sql);
                      ResultSet rs = stmt.executeQuery()) {
 
                     while (rs.next()) {
-                        // قراءة البيانات وتنظيفها لمنع XSS
                         String reservationId = SecurityUtils.sanitizeForXSS(rs.getString("reservation_id"));
                         int spotNumber = rs.getInt("spot_number");
-                        String fullName = SecurityUtils.sanitizeForXSS(rs.getString("full_name")); // تنظيف المدخلات
+                        String fullName = SecurityUtils.sanitizeForXSS(rs.getString("full_name"));
                         String reservedAt = AESUtils.decrypt(SecurityUtils.sanitizeForXSS(rs.getString("reserved_at")));
                         String reservedUntil = AESUtils.decrypt(SecurityUtils.sanitizeForXSS(rs.getString("reserved_until")));
                         double fee = rs.getDouble("fee");
 
-                        // إنشاء مفتاح فريد للحجز
                         String reservationKey = spotNumber + "_" + reservedAt + "_" + reservedUntil;
 
-                        // تحقق من الحجز في المجموعة
                         if (!uniqueReservations.contains(reservationKey)) {
-                            uniqueReservations.add(reservationKey); // إضافة الحجز الفريد
+                            uniqueReservations.add(reservationKey);
                             String reservationEntry = String.format(
                                     "Spot %d, Reserved By: %s, From: %s, Until: %s, Fee: $%.2f",
                                     spotNumber, fullName, reservedAt, reservedUntil, fee
                             );
-                            result.add(reservationEntry); // إضافة الحجز إلى القائمة
+                            result.add(reservationEntry);
                         }
                     }
                 }
 
-                // إرسال الرد إلى العميل
                 if (!result.isEmpty()) {
                     StringBuilder response = new StringBuilder();
-                    int counter = 1; // عداد للحجوزات
+                    int counter = 1;
                     for (String reservation : result) {
                         response.append("Reservation ID: ").append(counter++)
                                 .append(", ").append(reservation).append("\n");
                     }
-                    // إرسال الرد مشفراً
                     out.println(AESUtils.encrypt(SecurityUtils.sanitizeForXSS(response.toString())));
                 } else {
-                    // في حالة عدم وجود حجوزات
                     out.println(AESUtils.encrypt(SecurityUtils.sanitizeForXSS("No reserved parking spots found.")));
                 }
 

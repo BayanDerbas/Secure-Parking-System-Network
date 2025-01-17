@@ -341,13 +341,18 @@ public class ParkingClient {
     }
     private static void handleViewAllReservations(PrintWriter out, BufferedReader in) throws Exception {
         // إرسال الطلب للخادم
-        out.println(SecurityUtils.sanitizeForXSS("view_reserved_parking_spots")); // تنظيف المدخلات قبل الإرسال
-        System.out.println("Sent request: view_reserved_parking_spots");
+        String request = SecurityUtils.sanitizeForXSS("view_reserved_parking_spots");
+        out.println(request); // تنظيف المدخلات قبل الإرسال
+        System.out.println("Sent request: " + request);
 
         // استقبال الرد المشفر من الخادم
         String encryptedResponse = in.readLine();
-        String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
-        System.out.println("Server Response: \n" + serverResponse); // طباعة الرد
+        if (encryptedResponse != null) {
+            String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
+            System.out.println("Server Response: \n" + serverResponse); // طباعة الرد
+        } else {
+            System.err.println("No response received from server.");
+        }
     }
     private static void handleReserveSpot(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws IOException {
         // طلب عرض المواقف المتاحة
