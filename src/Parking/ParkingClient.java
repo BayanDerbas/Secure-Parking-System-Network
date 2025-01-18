@@ -156,35 +156,35 @@ public class ParkingClient {
             switch (choice) {
                 case 1 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewParkingSpots(out, in);
+                        handleViewParkingSpots(out, in,fullName);
                     } else {
                         handleReserveSpot(out, in, scanner, fullName);
                     }
                 }
                 case 2 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewAllVisitors(out, in);
+                        handleViewAllVisitors(out, in,fullName);
                     } else {
                         handleViewReservations(out, in, fullName);
                     }
                 }
                 case 3 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleAddParkingSpot(out, scanner, in);
+                        handleAddParkingSpot(out, scanner, in,fullName);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 4 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleRemoveParkingSpot(out, scanner,in);
+                        handleRemoveParkingSpot(out, scanner,in,fullName);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
                 }
                 case 5 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleViewAllReservations(out, in);
+                        handleViewAllReservations(out, in,fullName);
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
@@ -205,7 +205,7 @@ public class ParkingClient {
                 }
                 case 8 -> {
                     if ("Employee".equalsIgnoreCase(userType)) {
-                        handleEditParkingSpotName(out, in, scanner); // استدعاء وظيفة تعديل الموقف
+                        handleEditParkingSpotName(out, in, scanner,fullName); // استدعاء وظيفة تعديل الموقف
                     } else {
                         System.out.println("Invalid option. Try again.");
                     }
@@ -218,9 +218,11 @@ public class ParkingClient {
             }
         }
     }
-    private static void handleViewParkingSpots(PrintWriter out, BufferedReader in) throws IOException {
+    private static void handleViewParkingSpots(PrintWriter out, BufferedReader in,String fullName) throws IOException {
         try {
             out.println("view_parking_spots");
+
+            // استقبال البيانات المشفرة من الخادم
             String response = in.readLine();
             System.out.println("Response: " + response);
 
@@ -236,7 +238,7 @@ public class ParkingClient {
                 try {
                     byte[] encryptedBytes = Base64.getDecoder().decode(response);
                     String encryptedText = new String(encryptedBytes, StandardCharsets.UTF_8);
-                    System.out.println("Encrypted Text: " + encryptedText);
+                    System.out.println("Encrypted Text: " + AESUtils.decrypt(encryptedText));
 
                     // فك تشفير النص المشفر باستخدام AES
                     String decryptedText = AESUtils.decrypt(encryptedText);
@@ -244,6 +246,20 @@ public class ParkingClient {
 
                     System.out.println("Available parking spots:");
                     System.out.println(decryptedText);
+                    // إرسال الشهادة الرقمية إلى الخادم
+                    System.out.println("........................Digital Certificate........................");
+                    String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+                    File certificateFile = new File(certificatePath);
+                    if (certificateFile.exists()) {
+                        byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+                        String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                        System.out.println("Certificate content (Base64 encoded):");
+                        System.out.println(encodedCertificate);
+                        out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+                    } else {
+                        System.err.println("Certificate file not found.");
+                        return;
+                    }
                 } catch (IllegalArgumentException e) {
                     // في حال كانت الرسالة غير مشفرة وحدث خطأ عند فك تشفيرها
                     System.err.println("Error: Invalid Base64 format or unrecognized response.");
@@ -254,10 +270,10 @@ public class ParkingClient {
             e.printStackTrace();
         }
     }
-    private static void handleViewAllVisitors(PrintWriter out, BufferedReader in) throws Exception {
+    private static void handleViewAllVisitors(PrintWriter out, BufferedReader in,String fullName) throws Exception {
         out.println("view_all_visitors"); // إرسال الطلب
-        System.out.println("Sent request: view_all_visitors"); // طباعة الطلب
 
+        System.out.println("Sent request: view_all_visitors"); // طباعة الطلب
         String response = in.readLine(); // استقبال الرد
 
         // التحقق من نوع الرسالة المستلمة
@@ -269,14 +285,31 @@ public class ParkingClient {
             try {
                 String serverResponse = AESUtils.decrypt(response); // فك التشفير
                 System.out.println("Server Response: Visitors:\n" + serverResponse); // طباعة الرد
+                // إرسال الشهادة الرقمية إلى الخادم
+                System.out.println("........................Digital Certificate........................");
+                String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+                File certificateFile = new File(certificatePath);
+                if (certificateFile.exists()) {
+                    byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+                    String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                    System.out.println("Certificate content (Base64 encoded):");
+                    System.out.println(encodedCertificate);
+                    out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+                } else {
+                    System.err.println("Certificate file not found.");
+                    return;
+                }
             } catch (Exception e) {
                 System.err.println("Error decrypting server response: " + e.getMessage());
                 e.printStackTrace();
             }
         }
     }
-    private static void handleAddParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in) {
+    private static void handleAddParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in,String fullName) {
         try {
+            // عرض المواقف المتاحة
+            System.out.println("Fetching available parking spots...");
+            handleViewParkingSpots(out, in ,fullName);
             out.println("add_parking_spot");
             System.out.print("Enter the spot number to add: ");
             int spotNumber = scanner.nextInt();
@@ -285,14 +318,28 @@ public class ParkingClient {
             System.out.println("Sent request to add parking spot.");
 
             // بعد إضافة الموقف، يجب إعادة عرض المواقف
-            handleViewParkingSpots(out, in);  // هنا نمرر BufferedReader بدلاً من Scanner
+            handleViewParkingSpots(out, in,fullName);  // هنا نمرر BufferedReader بدلاً من Scanner
+            // إرسال الشهادة الرقمية إلى الخادم
+            System.out.println("........................Digital Certificate........................");
+            String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+            File certificateFile = new File(certificatePath);
+            if (certificateFile.exists()) {
+                byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+                String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                System.out.println("Certificate content (Base64 encoded):");
+                System.out.println(encodedCertificate);
+                out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+            } else {
+                System.err.println("Certificate file not found.");
+                return;
+            }
         } catch (Exception e) {
             System.err.println("Error adding parking spot: " + e.getMessage());
         }
     }
-    private static void handleRemoveParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in) throws IOException {
+    private static void handleRemoveParkingSpot(PrintWriter out, Scanner scanner, BufferedReader in,String fullName) throws IOException {
         // عرض المواقف المتاحة قبل الطلب
-        handleViewParkingSpots(out, in);
+        handleViewParkingSpots(out, in,fullName);
 
         try {
             out.println("remove_parking_spot");
@@ -305,16 +352,28 @@ public class ParkingClient {
             out.println(sanitizedSpotNumber);
             System.out.println("Sent request to remove parking spot.");
 
-            // عرض المواقف بعد حذف الموقف
-            handleViewParkingSpots(out, in);
+            // إرسال الشهادة الرقمية إلى الخادم
+            System.out.println("........................Digital Certificate........................");
+            String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+            File certificateFile = new File(certificatePath);
+            if (certificateFile.exists()) {
+                byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+                String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                System.out.println("Certificate content (Base64 encoded):");
+                System.out.println(encodedCertificate);
+                out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+            } else {
+                System.err.println("Certificate file not found.");
+                return;
+            }
         } catch (Exception e) {
             System.err.println("Error removing parking spot: " + e.getMessage());
         }
     }
-    private static void handleEditParkingSpotName(PrintWriter out, BufferedReader in, Scanner scanner) throws Exception {
+    private static void handleEditParkingSpotName(PrintWriter out, BufferedReader in, Scanner scanner, String fullName) throws Exception {
         // عرض المواقف المتاحة
         System.out.println("Fetching available parking spots...");
-        handleViewParkingSpots(out, in);
+        handleViewParkingSpots(out, in ,fullName);
 
         // مطالبة المستخدم بإدخال الأرقام
         System.out.print("Enter the old parking spot number: ");
@@ -335,11 +394,22 @@ public class ParkingClient {
         String decryptedResponse = AESUtils.decrypt(response);
         System.out.println(decryptedResponse);
 
-        // إعادة جلب المواقف المتاحة
-        System.out.println("Fetching updated parking spots...");
-        handleViewParkingSpots(out, in);
+        // إرسال الشهادة الرقمية إلى الخادم (في النهاية)
+        System.out.println("........................Digital Certificate........................");
+        String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+        File certificateFile = new File(certificatePath);
+        if (certificateFile.exists()) {
+            byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+            String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+            System.out.println("Certificate content (Base64 encoded):");
+            System.out.println(encodedCertificate);
+            out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+        } else {
+            System.err.println("Certificate file not found.");
+            return;
+        }
     }
-    private static void handleViewAllReservations(PrintWriter out, BufferedReader in) throws Exception {
+    private static void handleViewAllReservations(PrintWriter out, BufferedReader in,String fullName) throws Exception {
         // إرسال الطلب للخادم
         String request = SecurityUtils.sanitizeForXSS("view_reserved_parking_spots");
         out.println(request); // تنظيف المدخلات قبل الإرسال
@@ -350,6 +420,20 @@ public class ParkingClient {
         if (encryptedResponse != null) {
             String serverResponse = AESUtils.decrypt(encryptedResponse); // فك التشفير
             System.out.println("Server Response: \n" + serverResponse); // طباعة الرد
+            // إرسال الشهادة الرقمية إلى الخادم
+            System.out.println("........................Digital Certificate........................");
+            String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+            File certificateFile = new File(certificatePath);
+            if (certificateFile.exists()) {
+                byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+                String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+                System.out.println("Certificate content (Base64 encoded):");
+                System.out.println(encodedCertificate);
+                out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+            } else {
+                System.err.println("Certificate file not found.");
+                return;
+            }
         } else {
             System.err.println("No response received from server.");
         }
@@ -469,22 +553,6 @@ public class ParkingClient {
         // إرسال طلب عرض الحجوزات إلى الخادم
         out.println("view_reservations");
 
-        // إرسال الشهادة الرقمية
-        System.out.println("Sending certificate to the server...");
-        String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
-        File certificateFile = new File(certificatePath);
-        if (certificateFile.exists()) {
-            // قراءة الشهادة من الملف
-            byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
-            String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
-            System.out.println("Certificate content (Base64 encoded):");
-            System.out.println(encodedCertificate); // طباعة الشهادة المشفرة
-            out.println(encodedCertificate); // إرسال الشهادة إلى الخادم
-        } else {
-            System.err.println("Certificate file not found.");
-            return;
-        }
-
         // الانتظار لعرض الحجوزات
         Set<String> reservations = new HashSet<>(); // استخدام مجموعة لمنع التكرار
         System.out.println("Your reservations:");
@@ -501,6 +569,20 @@ public class ParkingClient {
             }
         }
         System.out.println("........................End of Reservations........................");
+        // إرسال الشهادة الرقمية إلى الخادم
+        System.out.println("........................Digital Certificate........................");
+        String certificatePath = "C:/Users/ahmad/Documents/" + fullName + "_certificate.crt";
+        File certificateFile = new File(certificatePath);
+        if (certificateFile.exists()) {
+            byte[] certificateBytes = Files.readAllBytes(certificateFile.toPath());
+            String encodedCertificate = Base64.getEncoder().encodeToString(certificateBytes);
+            System.out.println("Certificate content (Base64 encoded):");
+            System.out.println(encodedCertificate);
+            out.println(encodedCertificate);  // إرسال الشهادة إلى الخادم
+        } else {
+            System.err.println("Certificate file not found.");
+            return;
+        }
     }
     private static LocalDateTime parseDateTime(String dateTimeInput, DateTimeFormatter formatter) {
         try {

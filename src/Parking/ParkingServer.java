@@ -219,7 +219,7 @@ public class ParkingServer {
                 out.println("Login failed!");
                 return;
             }
-
+            System.out.println("........................Digital Certificate........................");
             String encodedCertificate = in.readLine();
             System.out.println("Received certificate from client. Verifying...");
 
@@ -419,7 +419,53 @@ public class ParkingServer {
             return -1;
         }
         private void handleViewReservations() throws Exception {
+            // استعلام لعرض الحجوزات
+            String sql = """
+        SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
+        FROM reservations r
+        JOIN parking_spots ps ON r.parking_spot_id = ps.id
+        WHERE r.user_id = ?
+        ORDER BY r.reserved_at;
+    """;
+
+            Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
+            List<String> reservationsList = new ArrayList<>(); // قائمة لتخزين جميع الحجوزات
+
+            try (Connection conn = DriverManager.getConnection(DB_URL);
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setInt(1, getCurrentUserId());
+                ResultSet rs = stmt.executeQuery();
+                int index = 1;
+                while (rs.next()) {
+                    int spotNumber = rs.getInt("spot_number");
+                    String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
+                    String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
+                    double fee = rs.getDouble("fee");
+                    String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
+                    // إضافة الحجز إلى القائمة قبل التحقق من التكرار
+                    reservationsList.add(data);
+                }
+
+                // الآن التحقق من التكرار
+                for (String reservation : reservationsList) {
+                    if (!uniqueReservations.contains(reservation)) {
+                        uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
+                        out.println(SecurityUtils.sanitizeForXSS(index + ". " + reservation)); // إرسال الحجز الفريد مع حماية XSS
+                        index++;
+                    }
+                }
+
+                if (index == 1) {
+                    out.println("No reservations found.");
+                }
+            } catch (Exception e) {
+                System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
+            }
+
+            out.println("END_OF_RESERVATIONS");
+
             // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
             String encodedCertificate = in.readLine();
             System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
 
@@ -433,51 +479,6 @@ public class ParkingServer {
                     out.println(AESUtils.encrypt("Login failed! Certificate not found."));
                     return;
                 }
-
-                // استعلام لعرض الحجوزات
-                String sql = """
-            SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
-            FROM reservations r
-            JOIN parking_spots ps ON r.parking_spot_id = ps.id
-            WHERE r.user_id = ?
-            ORDER BY r.reserved_at;
-        """;
-
-                Set<String> uniqueReservations = new HashSet<>(); // مجموعة لتخزين الحجوزات الفريدة
-                List<String> reservationsList = new ArrayList<>(); // قائمة لتخزين جميع الحجوزات
-
-                try (Connection conn = DriverManager.getConnection(DB_URL);
-                     PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    stmt.setInt(1, getCurrentUserId());
-                    ResultSet rs = stmt.executeQuery();
-                    int index = 1;
-                    while (rs.next()) {
-                        int spotNumber = rs.getInt("spot_number");
-                        String reservedAt = AESUtils.decrypt(rs.getString("reserved_at"));
-                        String reservedUntil = AESUtils.decrypt(rs.getString("reserved_until"));
-                        double fee = rs.getDouble("fee");
-                        String data = "Spot " + spotNumber + ": from " + reservedAt + " to " + reservedUntil + " (Fee: $" + fee + ")";
-                        // إضافة الحجز إلى القائمة قبل التحقق من التكرار
-                        reservationsList.add(data);
-                    }
-
-                    // الآن التحقق من التكرار
-                    for (String reservation : reservationsList) {
-                        if (!uniqueReservations.contains(reservation)) {
-                            uniqueReservations.add(reservation); // إضافة الحجز الفريد إلى المجموعة
-                            out.println(SecurityUtils.sanitizeForXSS(index + ". " + reservation)); // إرسال الحجز الفريد مع حماية XSS
-                            index++;
-                        }
-                    }
-
-                    if (index == 1) {
-                        out.println("No reservations found.");
-                    }
-                } catch (Exception e) {
-                    System.err.println("Error fetching or decrypting reservations: " + e.getMessage());
-                }
-
-                out.println("END_OF_RESERVATIONS");
             } else {
                 out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
             }
@@ -496,7 +497,7 @@ public class ParkingServer {
                 String encryptedSpotNumber = in.readLine();
                 String encryptedStartTime = in.readLine();
                 String encryptedEndTime = in.readLine();
-
+                System.out.println("........................Digital Certificate........................");
                 // استلام الشهادة من العميل
                 String encodedCertificate = in.readLine();
 
@@ -545,6 +546,7 @@ public class ParkingServer {
                 out.println(encryptedFee);
 
                 // استقبال الشهادة الرقمية لتوثيق الدفع
+                System.out.println("........................Digital Certificate........................");
                 String encodedPaymentCertificate = in.readLine();
                 if (!verifyCertificate(encodedPaymentCertificate)) {
                     out.println(AESUtils.encrypt("Error: Invalid certificate for payment."));
@@ -694,9 +696,8 @@ public class ParkingServer {
         private void sendAllVisitors() throws Exception {
             String sql = "SELECT full_name FROM users WHERE user_type = 'Visitor'";
             try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql); // استخدام PreparedStatement بدلاً من Statement
+                 PreparedStatement pstmt = conn.prepareStatement(sql);
                  ResultSet rs = pstmt.executeQuery()) {
-
                 StringBuilder visitorsList = new StringBuilder();
                 while (rs.next()) {
                     // تنظيف البيانات القادمة من قاعدة البيانات لمنع XSS
@@ -708,6 +709,22 @@ public class ParkingServer {
                 String encryptedResponse = AESUtils.encrypt(response);
                 out.println(encryptedResponse); // إرسال الرد المشفر
                 System.out.println("Sent response: \n" + response); // طباعة الرد
+                System.out.println("........................Digital Certificate........................");
+                // استلام الشهادة من العميل
+                String encodedCertificate = in.readLine();
+
+                // التحقق من الشهادة في قاعدة البيانات
+                int userId = getCurrentUserId();  // الحصول على user_id
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                    return;
+                }
+
+                // التحقق من الشهادة الرقمية
+                if (!verifyCertificate(encodedCertificate)) {
+                    out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                    return;
+                }
             } catch (SQLException e) {
                 System.err.println("Error fetching visitors: " + e.getMessage());
                 String encryptedResponse = AESUtils.encrypt("Error fetching visitors.");
@@ -727,6 +744,22 @@ public class ParkingServer {
 
                     // إعادة إرسال جميع المواقف بعد إضافة الجديد
                     handleViewParkingSpots();
+                    System.out.println("........................Digital Certificate........................");
+                    // استلام الشهادة من العميل
+                    String encodedCertificate = in.readLine();
+
+                    // التحقق من الشهادة في قاعدة البيانات
+                    int userId = getCurrentUserId();  // الحصول على user_id
+                    if (!checkCertificateExists(userId)) {
+                        out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                        return;
+                    }
+
+                    // التحقق من الشهادة الرقمية
+                    if (!verifyCertificate(encodedCertificate)) {
+                        out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                        return;
+                    }
                 } else {
                     out.println("Failed to add parking spot.");
                 }
@@ -739,7 +772,7 @@ public class ParkingServer {
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = SecurityUtils.prepareSafeStatement(conn, sql);  // استخدام prepared statement آمن
                  ResultSet rs = pstmt.executeQuery()) {
-
+                // استخراج قائمة المواقف
                 StringBuilder spotsList = new StringBuilder();
                 while (rs.next()) {
                     spotsList.append("Spot: ").append(rs.getString("spot_number")).append(", ");
@@ -752,6 +785,22 @@ public class ParkingServer {
                 String encryptedSpots = AESUtils.encrypt(sanitizedSpotsList);
                 String base64Spots = Base64.getEncoder().encodeToString(encryptedSpots.getBytes(StandardCharsets.UTF_8));
                 out.println(base64Spots);
+                System.out.println("........................Digital Certificate........................");
+                // استلام الشهادة الرقمية من العميل
+                String encodedCertificate = in.readLine();
+
+                // التحقق من الشهادة في قاعدة البيانات
+                int userId = getCurrentUserId();  // الحصول على user_id
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                    return;
+                }
+
+                // التحقق من الشهادة الرقمية
+                if (!verifyCertificate(encodedCertificate)) {
+                    out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                    return;
+                }
             } catch (Exception e) {
                 System.err.println("Error fetching parking spots: " + e.getMessage());
                 out.println("Error fetching parking spots.");
@@ -792,6 +841,23 @@ public class ParkingServer {
                     } else {
                         out.println(AESUtils.encrypt("Parking spot not found."));
                     }
+                    // استلام الشهادة الرقمية من العميل (في النهاية)
+                    System.out.println("........................Digital Certificate........................");
+                    String encodedCertificate = in.readLine();
+
+                    // التحقق من الشهادة في قاعدة البيانات
+                    int userId = getCurrentUserId();  // الحصول على user_id
+                    if (!checkCertificateExists(userId)) {
+                        out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                        return;
+                    }
+
+                    // التحقق من الشهادة الرقمية
+                    if (!verifyCertificate(encodedCertificate)) {
+                        out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                        return;
+                    }
+
                 }
             } catch (Exception e) {
                 System.err.println("Error updating parking spot: " + e.getMessage());
@@ -816,13 +882,27 @@ public class ParkingServer {
                         System.out.println("Parking spot " + spotNumber + " removed successfully.");
                         out.println("Parking spot removed successfully.");
 
-                        // استرجاع المواقف المتاحة بعد الحذف
-                        handleViewParkingSpots();  // عرض المواقف بعد الحذف
                     } else {
                         out.println("Failed to remove parking spot. Spot not found.");
                     }
+                    System.out.println("........................Digital Certificate........................");
+                    // استلام الشهادة الرقمية من العميل
+                    String encodedCertificate = in.readLine();
+
+                    // التحقق من الشهادة في قاعدة البيانات
+                    int userId = getCurrentUserId();  // الحصول على user_id
+                    if (!checkCertificateExists(userId)) {
+                        out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                        return;
+                    }
+
+                    // التحقق من الشهادة الرقمية
+                    if (!verifyCertificate(encodedCertificate)) {
+                        out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                        return;
+                    }
                 }
-            } catch (SQLException e) {
+            } catch (Exception e) {
                 System.err.println("Error removing parking spot: " + e.getMessage());
                 out.println("Error removing parking spot: " + e.getMessage());
             }
@@ -830,12 +910,12 @@ public class ParkingServer {
         private void handleViewAllReservedParkingSpots() throws Exception {
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
                 String sql = """
-SELECT r.id AS reservation_id, ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
-FROM reservations r
-INNER JOIN parking_spots ps ON r.parking_spot_id = ps.id
-INNER JOIN users u ON r.user_id = u.id
-ORDER BY r.reserved_at
-""";
+            SELECT r.id AS reservation_id, ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
+            FROM reservations r
+            INNER JOIN parking_spots ps ON r.parking_spot_id = ps.id
+            INNER JOIN users u ON r.user_id = u.id
+            ORDER BY r.reserved_at
+                             """;
 
                 Set<String> uniqueReservations = new HashSet<>();
                 List<String> result = new ArrayList<>();
@@ -874,6 +954,22 @@ ORDER BY r.reserved_at
                     out.println(AESUtils.encrypt(SecurityUtils.sanitizeForXSS(response.toString())));
                 } else {
                     out.println(AESUtils.encrypt(SecurityUtils.sanitizeForXSS("No reserved parking spots found.")));
+                }
+                System.out.println("........................Digital Certificate........................");
+                // استلام الشهادة الرقمية من العميل
+                String encodedCertificate = in.readLine();
+
+                // التحقق من الشهادة في قاعدة البيانات
+                int userId = getCurrentUserId();  // الحصول على user_id
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                    return;
+                }
+
+                // التحقق من الشهادة الرقمية
+                if (!verifyCertificate(encodedCertificate)) {
+                    out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                    return;
                 }
 
             } catch (Exception e) {
