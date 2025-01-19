@@ -120,16 +120,12 @@ public class DatabaseSetup {
             if (conn != null) {
                 System.out.println("Connected to the database!");
                 System.out.println(".........................................................");
-
                 // استعلام لعرض جميع المستخدمين
                 viewUsers(conn);
-
                 // استعلام لعرض الشهادات الرقمية
                 viewCertificates(conn);
-
                 // استعلام لعرض مواقف السيارات
                 viewParkingSpots(conn);
-
                 // استعلام لعرض الحجوزات مع التوقيع الرقمي للحجز وتوقيع الدفع
                 viewReservations(conn);
                 viewSignatures(conn);

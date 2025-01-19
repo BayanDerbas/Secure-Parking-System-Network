@@ -419,6 +419,24 @@ public class ParkingServer {
             return -1;
         }
         private void handleViewReservations() throws Exception {
+            // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
+            String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
+
+            // التحقق من صحة الشهادة الرقمية
+            if (verifyCertificate(encodedCertificate)) {
+                int userId = getCurrentUserId();
+                System.out.println("User ID: " + userId);  // سجل الـ userId
+
+                // التحقق من وجود الشهادة في قاعدة البيانات
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                    return;
+                }
+            } else {
+                out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
+            }
             // استعلام لعرض الحجوزات
             String sql = """
         SELECT ps.spot_number, r.reserved_at, r.reserved_until, r.fee
@@ -466,7 +484,7 @@ public class ParkingServer {
 
             // استلام الشهادة الرقمية من العميل
             System.out.println("........................Digital Certificate........................");
-            String encodedCertificate = in.readLine();
+            encodedCertificate = in.readLine();
             System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
 
             // التحقق من صحة الشهادة الرقمية
@@ -484,6 +502,24 @@ public class ParkingServer {
             }
         }
         private void handleReserveSpot() throws Exception {
+            // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
+            String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
+
+            // التحقق من صحة الشهادة الرقمية
+            if (verifyCertificate(encodedCertificate)) {
+                int userId = getCurrentUserId();
+                System.out.println("User ID: " + userId);  // سجل الـ userId
+
+                // التحقق من وجود الشهادة في قاعدة البيانات
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                    return;
+                }
+            } else {
+                out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
+            }
             String availableSpots = getAvailableParkingSpots();
             out.println(availableSpots);
             out.println("END_OF_SPOTS");
@@ -499,7 +535,7 @@ public class ParkingServer {
                 String encryptedEndTime = in.readLine();
                 System.out.println("........................Digital Certificate........................");
                 // استلام الشهادة من العميل
-                String encodedCertificate = in.readLine();
+                encodedCertificate = in.readLine();
 
                 // التحقق من الشهادة في قاعدة البيانات
                 int userId = getCurrentUserId();  // الحصول على user_id
@@ -694,6 +730,24 @@ public class ParkingServer {
             return durationHours * 10.0; // الرسوم 10 وحدات لكل ساعة
         }
         private void sendAllVisitors() throws Exception {
+            // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
+            String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
+
+            // التحقق من صحة الشهادة الرقمية
+            if (verifyCertificate(encodedCertificate)) {
+                int userId = getCurrentUserId();
+                System.out.println("User ID: " + userId);  // سجل الـ userId
+
+                // التحقق من وجود الشهادة في قاعدة البيانات
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                    return;
+                }
+            } else {
+                out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
+            }
             String sql = "SELECT full_name FROM users WHERE user_type = 'Visitor'";
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  PreparedStatement pstmt = conn.prepareStatement(sql);
@@ -711,7 +765,7 @@ public class ParkingServer {
                 System.out.println("Sent response: \n" + response); // طباعة الرد
                 System.out.println("........................Digital Certificate........................");
                 // استلام الشهادة من العميل
-                String encodedCertificate = in.readLine();
+                encodedCertificate = in.readLine();
 
                 // التحقق من الشهادة في قاعدة البيانات
                 int userId = getCurrentUserId();  // الحصول على user_id
@@ -731,7 +785,7 @@ public class ParkingServer {
                 out.println(encryptedResponse); // إرسال خطأ مشفر
             }
         }
-        private void handleAddParkingSpot() throws IOException {
+        private void handleAddParkingSpot() throws Exception {
             int spotNumber = Integer.parseInt(in.readLine());
             String sql = "INSERT INTO parking_spots (spot_number) VALUES (?)";
             try (Connection conn = DriverManager.getConnection(DB_URL);
@@ -741,11 +795,8 @@ public class ParkingServer {
                 if (rows > 0) {
                     System.out.println("Parking spot " + spotNumber + " added successfully.");
                     out.println("Parking spot added successfully.");
-
-                    // إعادة إرسال جميع المواقف بعد إضافة الجديد
-                    handleViewParkingSpots();
+                    // استلام الشهادة الرقمية من العميل
                     System.out.println("........................Digital Certificate........................");
-                    // استلام الشهادة من العميل
                     String encodedCertificate = in.readLine();
 
                     // التحقق من الشهادة في قاعدة البيانات
@@ -767,10 +818,26 @@ public class ParkingServer {
                 throw new RuntimeException(e);
             }
         }
-        private void handleViewParkingSpots() throws IOException {
+        private void handleViewParkingSpots() throws Exception {
+            // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
+            String encodedCertificate = in.readLine();
+
+            // التحقق من الشهادة في قاعدة البيانات
+            int userId = getCurrentUserId();  // الحصول على user_id
+            if (!checkCertificateExists(userId)) {
+                out.println(AESUtils.encrypt("Error: Certificate not found in database."));
+                return;
+            }
+
+            // التحقق من الشهادة الرقمية
+            if (!verifyCertificate(encodedCertificate)) {
+                out.println(AESUtils.encrypt("Error: Invalid certificate."));
+                return;
+            }
             String sql = "SELECT spot_number FROM parking_spots ORDER BY CAST(spot_number AS UNSIGNED)";
             try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = SecurityUtils.prepareSafeStatement(conn, sql);  // استخدام prepared statement آمن
+                 PreparedStatement pstmt = SecurityUtils.prepareSafeStatement(conn, sql); // استخدام prepared statement آمن
                  ResultSet rs = pstmt.executeQuery()) {
                 // استخراج قائمة المواقف
                 StringBuilder spotsList = new StringBuilder();
@@ -785,12 +852,12 @@ public class ParkingServer {
                 String encryptedSpots = AESUtils.encrypt(sanitizedSpotsList);
                 String base64Spots = Base64.getEncoder().encodeToString(encryptedSpots.getBytes(StandardCharsets.UTF_8));
                 out.println(base64Spots);
-                System.out.println("........................Digital Certificate........................");
                 // استلام الشهادة الرقمية من العميل
-                String encodedCertificate = in.readLine();
+                System.out.println("........................Digital Certificate........................");
+                encodedCertificate = in.readLine();
 
                 // التحقق من الشهادة في قاعدة البيانات
-                int userId = getCurrentUserId();  // الحصول على user_id
+                userId = getCurrentUserId();  // الحصول على user_id
                 if (!checkCertificateExists(userId)) {
                     out.println(AESUtils.encrypt("Error: Certificate not found in database."));
                     return;
@@ -803,7 +870,7 @@ public class ParkingServer {
                 }
             } catch (Exception e) {
                 System.err.println("Error fetching parking spots: " + e.getMessage());
-                out.println("Error fetching parking spots.");
+                out.println(AESUtils.encrypt("Error fetching parking spots."));
             }
         }
         private void handleEditParkingSpotName() throws Exception {
@@ -841,23 +908,24 @@ public class ParkingServer {
                     } else {
                         out.println(AESUtils.encrypt("Parking spot not found."));
                     }
-                    // استلام الشهادة الرقمية من العميل (في النهاية)
+                    // استلام الشهادة الرقمية من العميل
                     System.out.println("........................Digital Certificate........................");
                     String encodedCertificate = in.readLine();
+                    System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
 
-                    // التحقق من الشهادة في قاعدة البيانات
-                    int userId = getCurrentUserId();  // الحصول على user_id
-                    if (!checkCertificateExists(userId)) {
-                        out.println(AESUtils.encrypt("Error: Certificate not found in database."));
-                        return;
+                    // التحقق من صحة الشهادة الرقمية
+                    if (verifyCertificate(encodedCertificate)) {
+                        int userId = getCurrentUserId();
+                        System.out.println("User ID: " + userId);  // سجل الـ userId
+
+                        // التحقق من وجود الشهادة في قاعدة البيانات
+                        if (!checkCertificateExists(userId)) {
+                            out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                            return;
+                        }
+                    } else {
+                        out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
                     }
-
-                    // التحقق من الشهادة الرقمية
-                    if (!verifyCertificate(encodedCertificate)) {
-                        out.println(AESUtils.encrypt("Error: Invalid certificate."));
-                        return;
-                    }
-
                 }
             } catch (Exception e) {
                 System.err.println("Error updating parking spot: " + e.getMessage());
@@ -885,21 +953,23 @@ public class ParkingServer {
                     } else {
                         out.println("Failed to remove parking spot. Spot not found.");
                     }
-                    System.out.println("........................Digital Certificate........................");
                     // استلام الشهادة الرقمية من العميل
+                    System.out.println("........................Digital Certificate........................");
                     String encodedCertificate = in.readLine();
+                    System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
 
-                    // التحقق من الشهادة في قاعدة البيانات
-                    int userId = getCurrentUserId();  // الحصول على user_id
-                    if (!checkCertificateExists(userId)) {
-                        out.println(AESUtils.encrypt("Error: Certificate not found in database."));
-                        return;
-                    }
+                    // التحقق من صحة الشهادة الرقمية
+                    if (verifyCertificate(encodedCertificate)) {
+                        int userId = getCurrentUserId();
+                        System.out.println("User ID: " + userId);  // سجل الـ userId
 
-                    // التحقق من الشهادة الرقمية
-                    if (!verifyCertificate(encodedCertificate)) {
-                        out.println(AESUtils.encrypt("Error: Invalid certificate."));
-                        return;
+                        // التحقق من وجود الشهادة في قاعدة البيانات
+                        if (!checkCertificateExists(userId)) {
+                            out.println(AESUtils.encrypt("Login failed! Certificate not found."));
+                            return;
+                        }
+                    } else {
+                        out.println(AESUtils.encrypt("Login failed! Error verifying certificate."));
                     }
                 }
             } catch (Exception e) {
@@ -908,6 +978,24 @@ public class ParkingServer {
             }
         }
         private void handleViewAllReservedParkingSpots() throws Exception {
+            // استلام الشهادة الرقمية من العميل
+            System.out.println("........................Digital Certificate........................");
+            String encodedCertificate = in.readLine();
+            System.out.println("Received certificate from client: " + encodedCertificate);  // سجل الشهادة المستلمة
+
+            // التحقق من صحة الشهادة الرقمية
+            if (verifyCertificate(encodedCertificate)) {
+                int userId = getCurrentUserId();
+                System.out.println("User ID: " + userId);  // سجل الـ userId
+
+                // التحقق من وجود الشهادة في قاعدة البيانات
+                if (!checkCertificateExists(userId)) {
+                    out.println(AESUtils.encrypt("! Certificate not found."));
+                    return;
+                }
+            } else {
+                out.println(AESUtils.encrypt("! Error verifying certificate."));
+            }
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
                 String sql = """
             SELECT r.id AS reservation_id, ps.spot_number, u.full_name, r.reserved_at, r.reserved_until, r.fee
@@ -957,7 +1045,7 @@ public class ParkingServer {
                 }
                 System.out.println("........................Digital Certificate........................");
                 // استلام الشهادة الرقمية من العميل
-                String encodedCertificate = in.readLine();
+                encodedCertificate = in.readLine();
 
                 // التحقق من الشهادة في قاعدة البيانات
                 int userId = getCurrentUserId();  // الحصول على user_id
